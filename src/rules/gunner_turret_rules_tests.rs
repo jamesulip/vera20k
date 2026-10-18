@@ -68,8 +68,16 @@ fn native_gunner_reader_controls_match() {
         } else {
             ObjectCategory::Vehicle
         };
-        let object = ObjectType::from_ini_section(id, ini.section_or_empty(id), category);
-        assert_object(&object, &row["after"], name);
+        let section = ini.section_or_empty(id);
+        let mut config = GunnerTurrets::default();
+        config.apply_pass(id, section, category);
+        assert_config(&config, &row["after"], name);
+        let object = ObjectType::from_ini_section(id, section, category);
+        assert_eq!(
+            object.ifv_mode,
+            row["after"]["ifv_mode"].as_i64().unwrap() as i32,
+            "signed IFVMode: {name}"
+        );
     }
 }
 

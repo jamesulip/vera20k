@@ -45,7 +45,7 @@ mod spy_plane;
 mod spy_plane_tests;
 
 use crate::rules::ruleset::RuleSet;
-use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
+use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
@@ -856,7 +856,6 @@ pub struct SuperWeaponView {
     pub is_ready: bool,
     pub is_online: bool,
     pub sidebar_image: Option<String>,
-    pub kind: SuperWeaponKind,
 }
 
 /// Query active superweapons for a specific owner (for sidebar rendering).
@@ -884,7 +883,6 @@ pub fn superweapon_views_for_owner(
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             sidebar_image: sw_type.sidebar_image.clone(),
-            kind: sw_type.kind,
         });
     }
     views

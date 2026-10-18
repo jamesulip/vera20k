@@ -51,7 +51,6 @@ mod per_cell_object_turn_tests;
 
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
-    pub movement: movement::MovementTickStats,
     pub destroyed_structure: bool,
     pub bridge_state_changed: bool,
     ownership_changed: bool,
@@ -744,7 +743,6 @@ impl Simulation {
         let mut outcome = LiveObjectPassOutcome::default();
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
-            outcome.movement.merge(turn.movement);
             outcome.destroyed_structure |= turn.destroyed_structure;
             outcome.bridge_state_changed |= turn.bridge_state_changed;
             outcome.ownership_changed |= turn.ownership_changed;

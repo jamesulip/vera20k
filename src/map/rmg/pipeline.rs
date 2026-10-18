@@ -305,7 +305,6 @@ pub fn run_pipeline(
             grid: &mut *grid,
             scratch: &mut *scratch,
             ids: inputs.ids,
-            blocks: inputs.blocks,
             rng: &mut *rng,
             regions: &mut regions,
         };

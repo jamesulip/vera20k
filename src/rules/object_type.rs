@@ -548,6 +548,8 @@ pub struct ObjectType {
     /// Negative values shift the bar UP (above taller sprites). Default 0.
     /// Parsed from `PixelSelectionBracketDelta` in rules.ini.
     pub pixel_selection_bracket_delta: i32,
+    /// Rules LeptonMindControlOffset: Type+3DC ctor710D28=70, read714145.
+    pub lepton_mind_control_offset: i32,
     /// Sidebar/build tab grouping for structures.
     pub build_cat: Option<BuildCategory>,
     /// Human placement radius away from existing base-normal structures.
@@ -2292,6 +2294,7 @@ impl ObjectType {
 
     /// Base weapon-array slot 1 (`TechnoTypeClass+0x8B4`), gamemd's `Secondary`
     /// field. `Secondary=` or `Weapon2=`, same storage.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn secondary(&self) -> Option<&str> {
         self.weapon_at(WEAPON_SLOT_SECONDARY)
     }
@@ -2323,6 +2326,7 @@ impl ObjectType {
     /// `ElitePrimary` field: `ElitePrimary=` or `EliteWeapon1=`. Replaces
     /// [`Self::primary`] when the unit is at Elite tier (veterancy >= 200) and
     /// this slot names a weapon; Veteran tier (100..199) does NOT swap.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn elite_primary(&self) -> Option<&str> {
         self.elite_weapon_at(WEAPON_SLOT_PRIMARY)
     }
@@ -2330,6 +2334,7 @@ impl ObjectType {
     /// Elite weapon-array slot 1 (`TechnoTypeClass+0xAB0`), gamemd's
     /// `EliteSecondary` field: `EliteSecondary=` or `EliteWeapon2=`. Replaces
     /// [`Self::secondary`] at Elite tier under the same rule.
+    #[cfg(test)]
     pub fn elite_secondary(&self) -> Option<&str> {
         self.elite_weapon_at(WEAPON_SLOT_SECONDARY)
     }
@@ -2511,12 +2516,10 @@ impl ObjectType {
     ///
     /// Missing keys get sensible defaults matching RA2's behavior.
     /// The `id` is the section name, and `category` comes from which
-    /// type registry listed this object.
+    /// type registry listed this object. Fields that only the ordered Process
+    /// owner (`native_processing`) reads keep their constructor values here;
+    /// `RuleSet::from_processed_rules` publishes that owner's retained result.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
-        let mut infiltration = InfantryInfiltration::default();
-        if category == ObjectCategory::Infantry {
-            infiltration.apply_pass(section);
-        }
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
         // reached layer values with the live byte as the next pass's default.
@@ -2744,6 +2747,8 @@ impl ObjectType {
             .name
             .to_owned(),
             pixel_selection_bracket_delta: section.read_int("PixelSelectionBracketDelta", 0),
+            // Replaced by the ordered retained Type reader in RuleSet.
+            lepton_mind_control_offset: 70,
             build_cat: section
                 .read_name("BuildCat", 0x20)
                 .and_then(BuildCategory::from_ini),
@@ -2853,9 +2858,12 @@ impl ObjectType {
             // gamemd writes a separate UnitType +0x398=10 for Harvester/Weeder,
             // but ROT= remains the parsed TechnoType +0x71C facing-rate field.
             turret_rot: section.read_int("ROT", 0),
-            recoil: crate::rules::recoil::RecoilConfig::from_ini_section(section),
-            airstrike: crate::rules::airstrike::AirstrikeSettings::from_ini_section(section),
-            radial_fire_segments: section.read_int("RadialFireSegments", 0),
+            // Constructor values. Recoil, Airstrike and RadialFireSegments
+            // are read only by the ordered Process owner (`native_processing`),
+            // whose retained per-pass result `RuleSet` publishes.
+            recoil: crate::rules::recoil::RecoilConfig::default(),
+            airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
+            radial_fire_segments: 0,
             turret_anim: section.read_name("TurretAnim", 0x10).map(str::to_uppercase),
             turret_anim_is_voxel: section.read_bool("TurretAnimIsVoxel", false),
             turret_anim_x: section.read_int("TurretAnimX", 0),
@@ -2969,11 +2977,11 @@ impl ObjectType {
             // InfantryType5236A0 and BuildingType45DD9D pass Foot0 to
             // TechnoType710AF0, stored7110E0. Original Infantry constructor and
             // ENGINEER retail-layer reads: rules_oracle/infantry_speed_type.
-            // UnitType747620 resolves its -1 constructor seed from Crusher.
-            // The process owner replaces this standalone read with the value
-            // retained across admitted Rules passes (not merged final keys).
+            // A UnitType keeps its -1 constructor seed here: only the ordered
+            // Process owner reads it (`SpeedType::read_vehicle_pass`, retained
+            // across admitted Rules passes), and `RuleSet` publishes that value.
             speed_type: if category == ObjectCategory::Vehicle {
-                SpeedType::Invalid.read_vehicle_pass(section, section.read_bool("Crusher", false))
+                SpeedType::Invalid
             } else {
                 section.read_speed_type(
                     "SpeedType",
@@ -3118,15 +3126,14 @@ impl ObjectType {
                 .read_coord3_value("ExitCoord")
                 .map(|[x, y, z]| (x, y, z)),
 
-            // Cursor / interaction capability flags
-            engineer: if category == ObjectCategory::Infantry {
-                infiltration.engineer
-            } else {
-                section.read_bool("Engineer", false)
-            },
+            // Cursor / interaction capability flags. An InfantryType's
+            // Engineer, C4, Infiltrate and Agent start at the constructor's
+            // false: only the ordered Process owner reads them
+            // (`InfantryInfiltration`), and `RuleSet` publishes its result.
+            engineer: category != ObjectCategory::Infantry && section.read_bool("Engineer", false),
             ivan: category == ObjectCategory::Infantry && section.read_bool("Ivan", false),
-            infiltrate: infiltration.infiltrate,
-            agent: infiltration.agent,
+            infiltrate: false,
+            agent: false,
             deployer: section.read_bool("Deployer", false),
             capturable: section.read_bool("Capturable", false),
             spyable: category == ObjectCategory::Building && section.read_bool("Spyable", false),
@@ -3164,9 +3171,8 @@ impl ObjectType {
             open_topped: section.read_bool("OpenTopped", false),
             gunner: section.read_bool("Gunner", false),
             ifv_mode: section.read_int("IFVMode", 0),
-            gunner_turrets: crate::rules::gunner_turrets::GunnerTurrets::from_ini_section(
-                id, section, category,
-            ),
+            // Constructor table; only the ordered Process owner reads it.
+            gunner_turrets: crate::rules::gunner_turrets::GunnerTurrets::default(),
             open_transport_weapon: section.read_int("OpenTransportWeapon", -1),
             deploy_fire: section.read_bool("DeployFire", false),
             // `TechnoTypeClass::Constructor @ 0x00711187` seeds -1, and
@@ -3182,15 +3188,8 @@ impl ObjectType {
             elite_occupy_weapon: section
                 .read_name("EliteOccupyWeapon", 0x80)
                 .map(str::to_owned),
-            infantry_pips: {
-                let mut pips = InfantryPips::default();
-                // Direct fixtures perform one actual admitted type read.
-                // Production replaces this projection from ProcessedType.
-                if category == ObjectCategory::Infantry {
-                    pips.apply_pass(section);
-                }
-                pips
-            },
+            // Constructor values; only the ordered Process owner reads them.
+            infantry_pips: InfantryPips::default(),
             pip_scale: section
                 .read_name("PipScale", 0x20)
                 .map(PipScale::from_ini)
@@ -3253,11 +3252,7 @@ impl ObjectType {
             attack_friendlies: section.read_bool("AttackFriendlies", false),
             attack_cursor_on_friendlies: section.read_bool("AttackCursorOnFriendlies", false),
             sabotage_cursor: section.read_bool("SabotageCursor", false),
-            c4: if category == ObjectCategory::Infantry {
-                infiltration.c4
-            } else {
-                section.read_bool("C4", false)
-            },
+            c4: category != ObjectCategory::Infantry && section.read_bool("C4", false),
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
             invisible: section.read_bool("Invisible", false),
@@ -5213,10 +5208,9 @@ mod tests {
 
     #[test]
     fn c4_flag_parses_from_ini() {
-        let ini = IniFile::from_str("[GHOST]\nC4=yes\n");
-        let section = ini.section("GHOST").unwrap();
-        let obj = ObjectType::from_ini_section("GHOST", section, ObjectCategory::Infantry);
-        assert!(obj.c4);
+        let ini = IniFile::from_str("[InfantryTypes]\n0=GHOST\n[GHOST]\nC4=yes\n");
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        assert!(rules.object("GHOST").unwrap().c4);
     }
 
     #[test]

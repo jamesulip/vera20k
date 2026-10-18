@@ -447,12 +447,10 @@ mod radar_color_tests {
             z: 0,
             rx: 1,
             ry: 1,
-            is_water: false,
             variant: 0,
             tint: [1.0; 3],
             radar_left: left,
             radar_right: right,
-            has_damaged_data: false,
         }
     }
 

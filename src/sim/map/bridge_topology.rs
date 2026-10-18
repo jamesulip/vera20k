@@ -19,7 +19,7 @@
 
 use crate::map::bridge_facts::BridgeFlags;
 use crate::map::cell_index::NativeCellIdentity;
-use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainCell};
+use crate::map::resolved_terrain::NativeCellQuery;
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, BRIDGE_DECK_HEIGHT_LEVELS};
 
 /// Which persistent cell list an object belongs to. The ground list and the
@@ -50,11 +50,6 @@ pub struct CellBridgeView {
 }
 
 impl CellBridgeView {
-    /// Build a view from the canonical resolved-terrain cell.
-    pub fn from_resolved(cell: &ResolvedTerrainCell) -> Self {
-        Self::from_fields(cell.level, cell.bridge_facts.raw_flags)
-    }
-
     /// The view of the cell a Map lookup answered through `cells`: a real cell
     /// or the shared dummy, whose level and flags are current state too.
     pub(crate) fn from_query(cells: &NativeCellQuery<'_>, cell: NativeCellIdentity) -> Self {

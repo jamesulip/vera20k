@@ -17,7 +17,8 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::find_nearby_cell::PassabilityArgs;
+use crate::sim::components::DriveCoord;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
@@ -31,7 +32,6 @@ use crate::sim::passenger::{
 use crate::sim::pathfinding::passability::LandType;
 use crate::sim::world::{FrameEffects, PlacementEvidence, SimSoundEvent, Simulation};
 use crate::util::direction_tables::CELL_DELTAS;
-use crate::util::lepton::CELL_CENTER_LEPTON;
 
 /// `UnitClass+0x6E4`: the passengers a transport's Unload keeps aboard.
 /// `UnitClass::Mission_Unload @ 0x0073D630` state 0 writes it
@@ -409,17 +409,20 @@ fn eject_head_passenger(
 
             // Placement coordinate: the exit cell centre (`x * 256 + 0x80`).
             let (place_cell, sub_cell) = if passenger_is_infantry {
-                // `PlaceInfantryInCell` from the cell centre: quadrant 0, so the
-                // centre-row `RandomRanged(0, 3)` draw is made on the Scenario stream.
-                let spot = bump_crush::place_infantry_in_cell(
+                // `0x0073DA6B..0x0073DA7C`: 0x004ACA10 at the centre with Z 0,
+                // which never stands on a deck: quadrant 0, so the centre-row
+                // `RandomRanged(0, 3)` draw is made on the Scenario stream.
+                let spot = bump_crush::pick_infantry_sublocation(
+                    sim.resolved_terrain.as_ref(),
                     &sim.substrate.raw_cell_occupation,
-                    exit.0,
-                    exit.1,
-                    MovementLayer::Ground,
-                    CELL_CENTER_LEPTON,
-                    CELL_CENTER_LEPTON,
+                    &sim.substrate.occupancy,
+                    &sim.substrate.entities,
+                    Some(rules),
+                    &sim.interner,
                     &mut sim.scenario_rng,
-                );
+                    DriveCoord::cell(exit.0, exit.1, 0),
+                )
+                .map(|(spot, _)| spot);
                 (exit, spot)
             } else {
                 let passenger = sim
@@ -438,14 +441,17 @@ fn eject_head_passenger(
                 let cell = sim
                     .object_type(passenger.type_ref(), rules)
                     .and_then(|object| {
-                        sim.nearby_location_cell(
+                        sim.nearby_passable_cell(
                             (i32::from(exit.0), i32::from(exit.1)),
-                            PassabilityArgs {
-                                speed_type: object.speed_type,
-                                required_zone_id: None,
-                                movement_zone: MovementZone::Normal,
-                                bridge_aware_zone: false,
-                            },
+                            NearbyArgs::plain(
+                                PassabilityArgs {
+                                    speed_type: object.speed_type,
+                                    required_zone_id: None,
+                                    movement_zone: MovementZone::Normal,
+                                    bridge_aware_zone: false,
+                                },
+                                NearbyFootprint::SINGLE,
+                            ),
                         )
                     })
                     .unwrap_or(exit);
@@ -556,7 +562,7 @@ fn eject_head_passenger(
 /// removes the cargo head before scanning, restores that same head on any
 /// failed search/Unlimbo, then takes the shared Unload rate epilogue. The
 /// source is the supported Steam `gamemd.exe` body `0x0044D880..0x0044DC84`;
-/// infantry placement delegates to `MapClass::PlaceInfantryInCell
+/// infantry placement delegates to `MapClass::PickInfantrySublocation
 /// @ 0x004ACA10` and the existing `CellClass::PlaceInfantryInCell @
 /// 0x00481180` owner.
 ///
@@ -675,18 +681,18 @@ pub(crate) fn building_mission_unload_absorber(
                 return Err(DepartureFailure::Placement);
             };
 
-            // Native supplies the cell centre (x*256+0x80,y*256+0x80,z=0)
-            // to 4ACA10. A bridge candidate was skipped above, so this path
-            // uses the selected ground plane and consumes the shared
-            // center-row Scenario draw in 481180.
-            let Some(sub_cell) = bump_crush::place_infantry_in_cell(
+            // `0x0044DA78..0x0044DA89`: 0x004ACA10 at the cell centre with
+            // Z 0, which never stands on a deck, consuming the shared
+            // centre-row Scenario draw in 481180.
+            let Some((sub_cell, _)) = bump_crush::pick_infantry_sublocation(
+                sim.resolved_terrain.as_ref(),
                 &sim.substrate.raw_cell_occupation,
-                adjacent.0,
-                adjacent.1,
-                MovementLayer::Ground,
-                CELL_CENTER_LEPTON,
-                CELL_CENTER_LEPTON,
+                &sim.substrate.occupancy,
+                &sim.substrate.entities,
+                Some(rules),
+                &sim.interner,
                 &mut sim.scenario_rng,
+                DriveCoord::cell(adjacent.0, adjacent.1, 0),
             ) else {
                 return Err(DepartureFailure::Placement);
             };
@@ -811,7 +817,10 @@ pub(crate) fn unit_mission_unload(
                     movement_zone: MovementZone::Normal,
                     bridge_aware_zone: false,
                 };
-                if let Some(cell) = sim.nearby_location_cell(seed, wheel_land) {
+                if let Some(cell) = sim.nearby_passable_cell(
+                    seed,
+                    NearbyArgs::plain(wheel_land, NearbyFootprint::SINGLE),
+                ) {
                     // `Set_Destination` only — the committed selector stays
                     // Unload and state 0 re-runs once the drive has ended.
                     if let Err(cause) = sim.assign_destination_represented(

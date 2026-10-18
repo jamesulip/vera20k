@@ -21,18 +21,6 @@ pub struct EffectAssetFrameCounts {
     available: u16,
 }
 
-impl EffectAssetFrameCounts {
-    /// Literal unsigned frame count declared at SHP header offset `+6`.
-    pub fn raw(self) -> u16 {
-        self.raw
-    }
-
-    /// Existing effect-visible count after the AnimType body/shadow split.
-    pub fn available(self) -> u16 {
-        self.available
-    }
-}
-
 /// Deterministic match input derived from particle image SHPs.
 ///
 /// Keys are trimmed, uppercase asset IDs. A `BTreeMap` is deliberate: binding
@@ -100,7 +88,8 @@ impl EffectAssetCatalog {
     }
 
     /// Consumer-visible frame count (particle image timing).
-    pub fn effect_frame_count(&self, name: &str) -> Option<u16> {
+    #[cfg(test)]
+    fn effect_frame_count(&self, name: &str) -> Option<u16> {
         self.entry(name).map(|counts| counts.available)
     }
 
@@ -123,14 +112,7 @@ impl EffectAssetCatalog {
             .map(|(name, counts)| (name.as_str(), *counts))
     }
 
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
+    #[cfg(any(test, feature = "test-support"))]
     fn entry(&self, name: &str) -> Option<&EffectAssetFrameCounts> {
         canonical_asset_id(name).and_then(|name| self.entries.get(&name))
     }

@@ -12,6 +12,7 @@ use super::{FrameEffects, PlacementEvidence, Simulation};
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose;
 
@@ -82,12 +83,17 @@ impl Simulation {
             //65E91C..65E94F: Winged, zone -1, Normal, bridge-zone false,
             //1x1, no height/occupation/overlay gate, bridges allowed.
             let cell = self
-                .find_plain_passable_cell(
+                .nearby_passable_cell(
                     (i32::from(seed.0 as i16), i32::from(seed.1 as i16)),
-                    SpeedType::Winged,
-                    None,
-                    MovementZone::Normal,
-                    (1, 1),
+                    NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: SpeedType::Winged,
+                            required_zone_id: None,
+                            movement_zone: MovementZone::Normal,
+                            bridge_aware_zone: false,
+                        },
+                        NearbyFootprint::SINGLE,
+                    ),
                 )
                 .unwrap_or((0, 0));
             crate::sim::mission::authority::queue_entity_mission_deferred(

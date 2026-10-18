@@ -936,12 +936,17 @@ fn a_computer_yard_deploy_sends_its_ground_force_to_the_base() {
         let origin = sim.houses[&owner].base_origin();
         let frame = std::mem::replace(&mut sim.session.binary_frame, deploy_frame);
         let destination = sim
-            .find_plain_passable_cell(
+            .nearby_passable_cell(
                 (i32::from(origin.0), i32::from(origin.1)),
-                crate::rules::locomotor_type::SpeedType::Foot,
-                None,
-                crate::rules::locomotor_type::MovementZone::Normal,
-                (4, 4),
+                crate::sim::find_nearby_cell::NearbyArgs::plain(
+                    crate::sim::find_nearby_cell::PassabilityArgs {
+                        speed_type: crate::rules::locomotor_type::SpeedType::Foot,
+                        required_zone_id: None,
+                        movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+                        bridge_aware_zone: false,
+                    },
+                    crate::sim::find_nearby_cell::NearbyFootprint::new(4, 4),
+                ),
             )
             .map(|(x, y)| NavTargetRef::cell(x + 1, y + 1));
         sim.session.binary_frame = frame;

@@ -1214,7 +1214,6 @@ fn synthetic_theater_with_bridge_keys(
         bridge_set: Some(0),
         wood_bridge_set: None,
         slope_set_pieces: None,
-        slope_set_pieces2: None,
         bridge_middle_1,
         bridge_middle_2,
         tunnels: None,

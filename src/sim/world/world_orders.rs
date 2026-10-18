@@ -566,7 +566,6 @@ impl Simulation {
         self.sound_events.push(SimSoundEvent::BridgeRepaired {
             rx: building_cell.0,
             ry: building_cell.1,
-            owner,
             radar,
         });
     }

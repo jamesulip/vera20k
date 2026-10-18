@@ -718,14 +718,15 @@ fn advance_in_game_runtime_mode(
                         .sidebar_projection
                         .cameo_redraw_requested(runtime.simulation.session.binary_frame as i32)
                 });
-            // StripDraw6A9540 asks each entry's availability while drawing, so
-            // the darkening follows the simulation even when no pass, input or
-            // flash window rebuilt the projection this frame.
+            // StripDraw6A9540 asks each entry's availability and reads its
+            // Factory while drawing, so the drawn state follows the simulation
+            // even when no pass, input or flash window rebuilt the projection
+            // this frame.
             if recheck || flashing {
-                // The rebuilt view ends with this same availability pass.
+                // The rebuilt view takes the same drawn state.
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
             } else {
-                crate::app::presentation::sidebar_render::refresh_sidebar_cameo_availability(state);
+                crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
             }
         }
         if frame_committed && decision.admitted_by_pacer {
@@ -1343,6 +1344,9 @@ fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
             }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
+            TriggerEffect::HomeCamera { coord } => {
+                crate::app::input::camera::apply_home_camera(state, *coord);
+            }
             TriggerEffect::CameraAtCoord { coord, velocity } => {
                 crate::app::input::camera::apply_trigger_camera(state, *coord, *velocity);
             }
@@ -2018,7 +2022,6 @@ mod modal_pump_tests {
             destroyed_structure: false,
             ownership_changed: false,
             bridge_state_changed: false,
-            movement: Default::default(),
         };
 
         assert!(should_record_replay_tick(&tick, &[]));

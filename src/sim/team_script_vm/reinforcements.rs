@@ -16,6 +16,7 @@ use crate::rules::locomotor_type::MovementZone;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
@@ -292,7 +293,18 @@ impl Simulation {
             //becomes the next attempt's seed, even after a refused subcell.
             for _ in 0..255 {
                 let nearby = self
-                    .find_plain_passable_cell(cell, speed, None, MovementZone::Normal, (1, 1))
+                    .nearby_passable_cell(
+                        cell,
+                        NearbyArgs::plain(
+                            PassabilityArgs {
+                                speed_type: speed,
+                                required_zone_id: None,
+                                movement_zone: MovementZone::Normal,
+                                bridge_aware_zone: false,
+                            },
+                            NearbyFootprint::SINGLE,
+                        ),
+                    )
                     .unwrap_or((0, 0));
                 let identity = self
                     .resolved_terrain
@@ -799,12 +811,17 @@ impl Simulation {
                 .expect("reinforcement has its resolved TechnoType")
                 .speed_type;
             cell = self
-                .find_plain_passable_cell(
+                .nearby_passable_cell(
                     (i32::from(cell.0), i32::from(cell.1)),
-                    speed,
-                    None,
-                    MovementZone::Normal,
-                    (1, 1),
+                    NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: speed,
+                            required_zone_id: None,
+                            movement_zone: MovementZone::Normal,
+                            bridge_aware_zone: false,
+                        },
+                        NearbyFootprint::SINGLE,
+                    ),
                 )
                 .map_or((0, 0), |(x, y)| (x as i16, y as i16));
         }

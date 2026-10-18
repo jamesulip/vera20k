@@ -1032,14 +1032,15 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
 
     let mut expected_rng = sim.scenario_rng.clone();
     assert!(
-        crate::sim::movement::bump_crush::place_infantry_in_cell(
+        crate::sim::movement::bump_crush::pick_infantry_sublocation(
+            sim.resolved_terrain.as_ref(),
             &sim.substrate.raw_cell_occupation,
-            exit.0,
-            exit.1,
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
+            &sim.substrate.occupancy,
+            &sim.substrate.entities,
+            Some(&rules),
+            &sim.interner,
             &mut expected_rng,
+            crate::sim::components::DriveCoord::cell(exit.0, exit.1, 0),
         )
         .is_some()
     );
@@ -1140,14 +1141,15 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
     let exit = (16, 9);
     let mut expected_rng = sim.scenario_rng.clone();
     assert!(
-        crate::sim::movement::bump_crush::place_infantry_in_cell(
+        crate::sim::movement::bump_crush::pick_infantry_sublocation(
+            sim.resolved_terrain.as_ref(),
             &sim.substrate.raw_cell_occupation,
-            exit.0,
-            exit.1,
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
+            &sim.substrate.occupancy,
+            &sim.substrate.entities,
+            Some(&rules),
+            &sim.interner,
             &mut expected_rng,
+            crate::sim::components::DriveCoord::cell(exit.0, exit.1, 0),
         )
         .is_some()
     );
@@ -1376,14 +1378,15 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
         .set(0x7000, sim.session.binary_frame);
     let mut expected_rng = sim.scenario_rng.clone();
     assert!(
-        crate::sim::movement::bump_crush::place_infantry_in_cell(
+        crate::sim::movement::bump_crush::pick_infantry_sublocation(
+            sim.resolved_terrain.as_ref(),
             &sim.substrate.raw_cell_occupation,
-            north.0,
-            north.1,
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
+            &sim.substrate.occupancy,
+            &sim.substrate.entities,
+            Some(&rules),
+            &sim.interner,
             &mut expected_rng,
+            crate::sim::components::DriveCoord::cell(north.0, north.1, 0),
         )
         .is_some()
     );

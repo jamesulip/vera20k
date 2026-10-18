@@ -78,17 +78,12 @@ pub struct WeaponType {
     /// the sniper, Virus, disguise and Mirage weapons.
     pub reveal_on_fire: bool,
 
-    // ── Int/fixed-point fields ───────────────────────────────────────
+    // ── Int fields ───────────────────────────────────────────────────
     /// Ambient damage dealt to units standing near the weapon's owner (+0x98).
     pub ambient_damage: i32,
-    /// Minimum firing range in cells (+0xb8). Weapon won't fire if target
-    /// is closer than this distance.
-    pub minimum_range: SimFixed,
     /// Minimum firing range in LEPTONS — `+0xB8` through the same
     /// `CCINIClass::ReadRange` 0x00474620 call at 0x00772350.
     pub minimum_range_leptons: i32,
-    /// Blink time for disguise fake when firing while disguised (+0x13c).
-    pub disguise_fake_blink_time: i32,
     /// Signed byte duration of the laser effect, sign-extended for its timer
     /// consumer (+0x14E; constructor10, ReadInt7727DE, MOVSX6FD21D).
     pub laser_duration: i32,
@@ -96,11 +91,6 @@ pub struct WeaponType {
     pub rad_level: i32,
 
     // ── String/reference fields ──────────────────────────────────────
-    /// `DownReport=` sounds, played when the weapon fires downward (e.g.,
-    /// from a building).
-    pub down_report: Vec<String>,
-    /// Animation played during assault (garrison clearing).
-    pub assault_anim: Option<String>,
     /// Animation played by occupants when firing from a building.
     pub occupant_anim: Option<String>,
     /// Animation played by units firing from an open-topped transport.
@@ -125,8 +115,6 @@ pub struct WeaponType {
     pub use_spark_particles: bool,
     /// Fires in all directions regardless of facing (+0x12b).
     pub omni_fire: bool,
-    /// Distributes weapon fire across multiple targets (+0x12c).
-    pub distributed_weapon_fire: bool,
     /// Weapon is a railgun (special projectile visual) (+0x12d).
     pub is_railgun: bool,
     /// Projectile follows a lobbed arc trajectory (+0x12e).
@@ -149,14 +137,6 @@ pub struct WeaponType {
     pub fire_once: bool,
     /// Weapon is never automatically selected for use (+0x136).
     pub never_use: bool,
-    /// Weapon can fire at terrain/ground (+0x138).
-    pub terrain_fire: bool,
-    /// Uses the sabotage cursor when this weapon is active (+0x139).
-    pub sabotage_cursor: bool,
-    /// Uses the MiG attack cursor (+0x13a).
-    pub mig_attack_cursor: bool,
-    /// Can only fire while the unit is disguised (+0x13b).
-    pub disguise_fire_only: bool,
     /// Mind control effect has no unit limit (+0x140).
     pub infinite_mind_control: bool,
     /// Unit can fire this weapon while moving (+0x141). The constructor sets
@@ -245,12 +225,10 @@ impl WeaponType {
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),
 
-            // Int/fixed-point fields
+            // Int fields
             ambient_damage: section.read_int("AmbientDamage", 0),
-            minimum_range: sim_from_f32(section.read_double("MinimumRange", 0.0) as f32),
             // +0xB8 is zeroed alongside +0xB4 at 0x00771CBF.
             minimum_range_leptons: section.read_range("MinimumRange", 0),
-            disguise_fake_blink_time: section.read_int("DisguiseFakeBlinkTime", 0),
             // ReadINI stores only AL; SpawnLaser6FD21D sign-extends the
             // retained byte. ReadInt uses its default only for absent keys,
             // so narrowing after the projected pass history is equivalent.
@@ -258,9 +236,7 @@ impl WeaponType {
             rad_level: section.read_int("RadLevel", 0),
 
             // String/reference fields
-            down_report: sound_list(section, "DownReport"),
-            // ReadString 0x80 at `0x0077257C`, `0x007725B5`, `0x007725EE`.
-            assault_anim: section.read_name("AssaultAnim", 0x80).map(str::to_string),
+            // ReadString 0x80 at `0x007725B5`, `0x007725EE`.
             occupant_anim: section.read_name("OccupantAnim", 0x80).map(str::to_string),
             open_topped_anim: section
                 .read_name("OpenToppedAnim", 0x80)
@@ -291,7 +267,6 @@ impl WeaponType {
             use_fire_particles: section.read_bool("UseFireParticles", false),
             use_spark_particles: section.read_bool("UseSparkParticles", false),
             omni_fire: section.read_bool("OmniFire", false),
-            distributed_weapon_fire: section.read_bool("DistributedWeaponFire", false),
             is_railgun: section.read_bool("IsRailgun", false),
             lobber: section.read_bool("Lobber", false),
             bright: section.read_bool("Bright", false),
@@ -306,10 +281,6 @@ impl WeaponType {
             cell_rangefinding: section.read_bool("CellRangefinding", false),
             fire_once: section.read_bool("FireOnce", false),
             never_use: section.read_bool("NeverUse", false),
-            terrain_fire: section.read_bool("TerrainFire", false),
-            sabotage_cursor: section.read_bool("SabotageCursor", false),
-            mig_attack_cursor: section.read_bool("MigAttackCursor", false),
-            disguise_fire_only: section.read_bool("DisguiseFireOnly", false),
             infinite_mind_control: section.read_bool("InfiniteMindControl", false),
             fire_while_moving: section.read_bool("FireWhileMoving", true),
             drain_weapon: section.read_bool("DrainWeapon", false),
@@ -575,7 +546,6 @@ mod tests {
         assert_eq!(weapon.warhead, None);
         // New fields should all default correctly
         assert_eq!(weapon.ambient_damage, 0);
-        assert_eq!(weapon.minimum_range, SIM_ZERO);
         assert_eq!(weapon.laser_duration, 10);
         assert_eq!(weapon.rad_level, 0);
         assert!(!weapon.is_sonic);
@@ -583,7 +553,6 @@ mod tests {
         assert!(!weapon.is_electric_bolt);
         assert!(weapon.anim.is_empty());
         assert_eq!(weapon.laser_inner_color, [0, 0, 0]);
-        assert!(weapon.down_report.is_empty());
         assert!(weapon.decloak_to_fire, "native omitted-key default is yes");
     }
 
@@ -694,7 +663,6 @@ mod tests {
         let section: &IniSection = ini.section("TestWeapon").unwrap();
         let weapon: WeaponType = WeaponType::from_ini_section("TestWeapon", section);
 
-        assert_eq!(weapon.minimum_range, sim_from_f32(3.5));
         assert_eq!(weapon.minimum_range_leptons, 896, "3.5 cells * 256");
     }
 }

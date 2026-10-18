@@ -26,9 +26,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::RANK_ELITE_U16;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
-use crate::sim::find_nearby_cell::{
-    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
-};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -512,38 +510,20 @@ impl Simulation {
             i32::from((seed.x / 256) as i16),
             i32::from((seed.y / 256) as i16),
         );
-        let size = self
-            .playfield_bounds
-            .zip(self.playfield_size_height)
-            .map(|(bounds, height)| (bounds.base, height))
-            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())?;
-        let grid = self.path_grid_snapshot();
-        find_nearby_passable_cell(
+        self.nearby_passable_cell(
             seed,
-            &NearbyQuery {
-                native_cells: None,
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
-                    speed_type: object.speed_type,
-                    required_zone_id: None,
-                    movement_zone: MovementZone::Normal,
-                    bridge_aware_zone: on_bridge,
-                },
-                footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: true,
+            NearbyArgs {
                 check_height: true,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(size.0, size.1),
-                target_cell: None,
-                path_grid: grid.as_deref(),
-                resolved_terrain: self.resolved_terrain.as_ref(),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
+                ..NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: object.speed_type,
+                        required_zone_id: None,
+                        movement_zone: MovementZone::Normal,
+                        bridge_aware_zone: on_bridge,
+                    },
+                    NearbyFootprint::SINGLE,
+                )
             },
-            self.session.binary_frame,
         )
     }
 

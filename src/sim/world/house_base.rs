@@ -9,9 +9,7 @@
 use super::*;
 use crate::rules::ruleset::HouseCostFactors;
 use crate::sim::components::{DriveCoord, NavTargetRef};
-use crate::sim::find_nearby_cell::{
-    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
-};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::util::native_x87::NativeF32Bits;
@@ -111,41 +109,19 @@ fn project_geometry(
         }
     }
     let primary = if weight_total > 0 {
-        let terrain = sim
-            .resolved_terrain
-            .as_ref()
-            .expect("map projection terrain");
-        let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let (size_width, size_height) = sim.map_size_diamond().expect("map projection Size");
-        let query = NearbyQuery {
-            native_cells: Some(&native_cells),
-            raw_occupation: Some(&sim.substrate.raw_cell_occupation),
-            passability: PassabilityArgs {
-                speed_type: SpeedType::Foot,
-                required_zone_id: None,
-                movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
-                bridge_aware_zone: false,
-            },
-            footprint: NearbyFootprint::SINGLE,
-            allow_bridge_cells: true,
-            check_height: false,
-            check_occupancy: false,
-            radius_cap: map_owned_radius_cap(size_width, size_height),
-            target_cell: None,
-            path_grid: None,
-            resolved_terrain: Some(terrain),
-            overlay_grid: sim.overlay_grid.as_ref(),
-            occupancy: Some(&sim.substrate.occupancy),
-            entities: Some(&sim.substrate.entities),
-            zone_grid: sim.zone_grid.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
-        };
         let x = (sum_x / weight_total / 256) as i16;
         let y = (sum_y / weight_total / 256) as i16;
-        find_nearby_passable_cell(
+        sim.nearby_passable_cell(
             (i32::from(x), i32::from(y)),
-            &query,
-            sim.session.binary_frame,
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type: SpeedType::Foot,
+                    required_zone_id: None,
+                    movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+                    bridge_aware_zone: false,
+                },
+                NearbyFootprint::SINGLE,
+            ),
         )
         .filter(|&cell| cell != (0, 0))
     } else {
@@ -471,12 +447,17 @@ impl Simulation {
         // (0x0050C9A7..0x0050C9BC); the offset (0x0050C9C2, 0x0050C9C7)
         // follows that test.
         let Some((x, y)) = self
-            .find_plain_passable_cell(
+            .nearby_passable_cell(
                 (i32::from(origin.0), i32::from(origin.1)),
-                SpeedType::Foot,
-                None,
-                crate::rules::locomotor_type::MovementZone::Normal,
-                (4, 4),
+                NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: SpeedType::Foot,
+                        required_zone_id: None,
+                        movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+                        bridge_aware_zone: false,
+                    },
+                    NearbyFootprint::new(4, 4),
+                ),
             )
             .filter(|&cell| cell != (0, 0))
         else {
@@ -535,6 +516,30 @@ impl Simulation {
         }
     }
 
+    /// House50DF30: the existing alternate/primary base-cell owner, followed
+    /// by Map5657A0 and CellGetCoords486840. An empty base is CoordEmpty.
+    /// WhichZone4FFB20 inlines the same query; Home731773 calls it directly.
+    pub(crate) fn house_base_coordinate(
+        &self,
+        owner: InternedId,
+        cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    ) -> [i32; 3] {
+        let origin = self
+            .houses
+            .get(&owner)
+            .map_or((0, 0), HouseState::base_origin);
+        if origin == (0, 0) {
+            return [0, 0, 0];
+        }
+        let coord = crate::sim::movement::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Cell(origin.0, origin.1),
+            self,
+            cells,
+        )
+        .expect("Cell GetCoords always returns a coordinate");
+        [coord.x, coord.y, coord.z]
+    }
+
     /// `HouseClass::Which_Zone @ 0x004FFB20` answering -1 for `owner`: `coord`
     /// is the empty coordinate (`0x00A8EFF8`, all zero) or lies more than four
     /// base radii (`+0x5498`) from the base cell's GetCoords (`0x00486840` on
@@ -551,17 +556,11 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return true;
         };
-        let origin = house.base_origin();
-        let base = if origin == (0, 0) {
-            [0, 0, 0]
-        } else {
-            let cell = crate::sim::projectile::cell_ground_coord(
-                self.resolved_terrain.as_ref(),
-                origin.0,
-                origin.1,
-            );
-            [cell.x, cell.y, cell.z]
-        };
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let base = self.house_base_coordinate(owner, cells.as_ref());
         let distance = crate::util::native_x87::distance_3d_leptons(base, coord);
         let radius = house.base_radius();
         distance > radius && radius.wrapping_shl(2) < distance
@@ -601,7 +600,7 @@ impl Simulation {
         let origin = house.base_origin();
         let terrain = self.resolved_terrain.as_ref()?;
         let bounds = self.playfield_bounds?;
-        let (size_width, size_height) = self.map_size_diamond()?;
+        self.map_size_diamond()?;
         let zones = self.zone_grid.as_ref()?;
         let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
 
@@ -654,31 +653,19 @@ impl Simulation {
         )?;
         //5002E5 packed arguments [Track1,zone,Normal0,bridge0,1,1,0,0,0,1,0,0].
         //GetZone has NO SpeedType parameter; the following FNPC always Track.
-        let query = NearbyQuery {
-            native_cells: Some(&native_cells),
-            raw_occupation: Some(&self.substrate.raw_cell_occupation),
-            passability: PassabilityArgs {
-                speed_type: SpeedType::Track,
-                required_zone_id: Some(zone),
-                movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
-                bridge_aware_zone: false,
-            },
-            footprint: NearbyFootprint::SINGLE,
-            allow_bridge_cells: true,
-            check_height: false,
-            check_occupancy: false,
-            radius_cap: map_owned_radius_cap(size_width, size_height),
-            target_cell: None,
-            path_grid: None,
-            resolved_terrain: Some(terrain),
-            overlay_grid: self.overlay_grid.as_ref(),
-            occupancy: Some(&self.substrate.occupancy),
-            entities: Some(&self.substrate.entities),
-            zone_grid: Some(zones),
-            playfield_bounds: Some(bounds),
-        };
-        find_nearby_passable_cell(seed, &query, self.session.binary_frame)
-            .filter(|&cell| cell != (0, 0))
+        self.nearby_passable_cell(
+            seed,
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type: SpeedType::Track,
+                    required_zone_id: Some(zone),
+                    movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+                    bridge_aware_zone: false,
+                },
+                NearbyFootprint::SINGLE,
+            ),
+        )
+        .filter(|&cell| cell != (0, 0))
     }
 
     /// Execute the retained House4FD150 projection with this map's native
@@ -1999,13 +1986,18 @@ mod tests {
 
         let origin = (12, 12);
         sim.houses.get_mut(&owner).unwrap().set_base_center(origin);
-        let search = |seed: (u16, u16), footprint| {
-            sim.find_plain_passable_cell(
+        let search = |seed: (u16, u16), (width, height)| {
+            sim.nearby_passable_cell(
                 (i32::from(seed.0), i32::from(seed.1)),
-                SpeedType::Foot,
-                None,
-                MovementZone::Normal,
-                footprint,
+                NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: SpeedType::Foot,
+                        required_zone_id: None,
+                        movement_zone: MovementZone::Normal,
+                        bridge_aware_zone: false,
+                    },
+                    NearbyFootprint::new(width, height),
+                ),
             )
         };
         let found = search(origin, (4, 4)).unwrap();

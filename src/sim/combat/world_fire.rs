@@ -1655,22 +1655,17 @@ pub(super) fn emit_admitted_fire(
         .entities
         .get(snap.stable_id)
         .is_some_and(|firer| firer.passenger_role.in_open_transport());
+    #[cfg(any(test, feature = "test-support"))]
     let facing = (snap.hull_facing.current(binary_frame) >> 8) as u8;
     out.fire_events.push(SimFireEvent {
         attacker_id: snap.stable_id,
-        attacker_type_ref: snap.type_id,
+        #[cfg(any(test, feature = "test-support"))]
         weapon_slot: selected.slot,
         weapon_id: world.interner.intern(selected.weapon_id),
+        #[cfg(any(test, feature = "test-support"))]
         facing,
-        veterancy: snap.veterancy,
-        origin_snapshot: FireOriginSnapshot {
-            rx: snap.pos_rx,
-            ry: snap.pos_ry,
-            z: snap.pos_z,
-            sub_x: snap.sub_x,
-            sub_y: snap.sub_y,
-            facing,
-        },
+        #[cfg(any(test, feature = "test-support"))]
+        origin_snapshot: FireOriginSnapshot { facing },
         target: snap.target,
         report_sound_id,
         // The report and the muzzle anim read the launch source (`[ESP+0x44]`,

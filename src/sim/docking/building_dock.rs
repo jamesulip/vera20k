@@ -1663,7 +1663,6 @@ mod tests {
                 ),
                 &IniFile::from_str("[GAPILE]\nFoundation=3x2\n[GAPOWR]\nFoundation=2x2\n"),
             );
-        sim.playfield_size_height = Some(16);
         spawn_exit_query_building(&mut sim, &rules, DEPOT, "GAPILE", 14, 14);
         spawn_entity(&mut sim, 1, "E1", EntityCategory::Infantry, 14, 14, 125);
         sim.substrate
@@ -1821,7 +1820,6 @@ mod tests {
                  NumberOfDocks=1\nNumberImpassableRows=1\n",
                 &IniFile::from_str("[NADEPT]\nFoundation=4x3\n"),
             );
-        sim.playfield_size_height = Some(16);
         spawn_exit_query_building(&mut sim, &rules, DEPOT, "NADEPT", 6, 9);
         spawn_tank(&mut sim, 1, 8, 10);
         sim.substrate
@@ -2879,8 +2877,11 @@ mod tests {
         assert!(linked(&sim, 1));
         let nav = sim.substrate.entities.get(1).unwrap().navigation.nav_com();
         assert!(nav.is_some());
-        sim.substrate.entities.get_mut(DEPOT).unwrap().temporal =
-            crate::sim::temporal::TemporalState::warped_by_for_test(999);
+        sim.substrate
+            .entities
+            .get_mut(DEPOT)
+            .unwrap()
+            .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(999));
         let due = {
             let timer = sim
                 .substrate

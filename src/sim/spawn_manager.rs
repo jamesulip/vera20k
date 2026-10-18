@@ -262,11 +262,6 @@ impl SpawnManagerState {
         self.spawn_type
     }
 
-    /// The child's rocket family, if any.
-    pub fn missile_family(&self) -> Option<MissileFamily> {
-        self.missile_family
-    }
-
     /// `SpawnRegenRate=` in frames.
     pub fn regen_rate(&self) -> u32 {
         self.regen_rate
@@ -275,11 +270,6 @@ impl SpawnManagerState {
     /// `SpawnReloadRate=` in frames.
     pub fn reload_rate(&self) -> u32 {
         self.reload_rate
-    }
-
-    /// The pool's kamikaze wait in frames.
-    pub fn kamikaze_wait_frames(&self) -> u32 {
-        self.kamikaze_wait_frames
     }
 
     /// The pool's slots.

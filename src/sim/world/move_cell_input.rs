@@ -458,9 +458,7 @@ impl Simulation {
             .playfield_bounds
             .ok_or("Move click needs the playfield")?;
         let size = self
-            .playfield_size_height
-            .map(|height| (bounds.base, height))
-            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())
+            .map_size_diamond()
             .ok_or("Move click needs the map Size")?;
         //One fresh query identity starts from the canonical retained bytes.
         let cells = NativeCellQuery::isolated(terrain);

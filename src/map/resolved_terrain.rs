@@ -314,14 +314,6 @@ impl ResolvedTerrainCell {
         };
     }
 
-    pub fn is_walkable(&self) -> bool {
-        !self.ground_walk_blocked
-    }
-
-    pub fn is_bridge_transition_cell(&self) -> bool {
-        self.bridge_transition
-    }
-
     pub fn bridge_deck_level_if_any(&self) -> Option<u8> {
         self.has_bridge_deck.then_some(self.bridge_deck_level)
     }

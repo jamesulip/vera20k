@@ -114,6 +114,10 @@ pub enum TriggerEffect {
     MusicTheme {
         request: ThemeRequest,
     },
+    /// Home7315A0 also clears Follow, including when no coordinate is found.
+    HomeCamera {
+        coord: Option<[i32; 3]>,
+    },
 }
 
 /// Original definition pointers translated to retained registry ordinals.
@@ -3103,8 +3107,12 @@ impl Simulation {
                 };
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.techno_registry_len() {
-                    let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                while ordinal < self.substrate.entities.building_registry_len() {
+                    let id = self
+                        .substrate
+                        .entities
+                        .building_registry_at(ordinal)
+                        .unwrap();
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.category() == crate::map::entities::EntityCategory::Structure
                             && entity.lifecycle.object_alive()
@@ -3120,6 +3128,40 @@ impl Simulation {
                             overlay_registry,
                             frame_effects,
                         );
+                        matched = true;
+                    }
+                    ordinal += 1;
+                }
+                return matched;
+            }
+            61 | 62 => {
+                // Execute6DDF65/6DDFD9: live BuildingClass array order,
+                // ObjectAlive+90, Marked+74, !Limbo81 and TagContains6E5380.
+                // Receipt is true once the callee is invoked, even a no-op.
+                let (Some(live), Some(rules)) = (context.live_index, rules) else {
+                    return false;
+                };
+                let online = action.kind == 62;
+                let mut matched = false;
+                let mut ordinal = 0;
+                while ordinal < self.substrate.entities.building_registry_len() {
+                    let id = self
+                        .substrate
+                        .entities
+                        .building_registry_at(ordinal)
+                        .unwrap();
+                    let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
+                        entity.lifecycle.object_alive()
+                            && entity.lifecycle.cell_marked()
+                            && !entity.lifecycle.in_limbo()
+                            && entity.building_online() != online
+                    });
+                    if eligible && self.tag_contains_live_trigger(TagAttachment::Object(id), live) {
+                        if online {
+                            self.go_building_online(id, rules, frame_effects);
+                        } else {
+                            self.go_building_offline(id, rules, frame_effects);
+                        }
                         matched = true;
                     }
                     ordinal += 1;
@@ -3876,6 +3918,24 @@ impl Simulation {
                 };
                 return self.trigger_nuke_strike(rules, waypoint as i32);
             }
+            96 => {
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                return self.trigger_chemical_strike(rules, waypoint as i32);
+            }
+            109 => {
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                return crate::sim::superweapon::iron_curtain::at_waypoint(
+                    self,
+                    rules,
+                    waypoint as i32,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
             46 | 47 => {
                 let locked = action.kind == 46;
                 let was_locked = self.session.input_locked();
@@ -4021,6 +4081,19 @@ impl Simulation {
                 if let Some(raw_local_size) = parse_visible_map_area(&action.params) {
                     let _ = self.change_visible_map_area(raw_local_size, rules);
                 }
+            }
+            145 => {
+                // Execute6DFDD6 calls Home7315A0 for PlayerPtr, independent
+                // of the incoming House/value. Resolve coordinates before
+                // the frame hash, including House50DF30's Dummy effects.
+                let coord = rules.and_then(|rules| {
+                    let cells = self
+                        .resolved_terrain
+                        .as_ref()
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    self.home_camera_coordinate(rules, cells.as_ref())
+                });
+                effects.push(TriggerEffect::HomeCamera { coord });
             }
             ACTION_CENTER_CAMERA | ACTION_JUMP_CAMERA => {
                 // Execute6DD8B0 resolves GetWaypoint68BCC0 and native Cell
@@ -4399,8 +4472,16 @@ mod chrono_reinforcement_tests;
 mod lightning_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_building_power_tests.rs"]
+mod building_power_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_house_directive_tests.rs"]
 mod house_directive_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_home_camera_tests.rs"]
+mod home_camera_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_explosion_tests.rs"]
@@ -4433,3 +4514,7 @@ mod ambient_event_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_nuke_tests.rs"]
 mod nuke_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_direct_strike_tests.rs"]
+mod direct_strike_tests;

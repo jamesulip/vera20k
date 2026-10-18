@@ -202,15 +202,6 @@ pub struct WarheadType {
     /// Calls in airstrike. `WarheadTypeClass+0x16C` (ReadINI `0x0075D8F0`),
     /// read by `TechnoClass::What_Weapon_Should_I_Use @ 0x006F3481`.
     pub airstrike: bool,
-    /// Tesla weapon. Native offset **UNKNOWN** — VERA-internal, gamemd
-    /// equivalent UNCHECKED. `WarheadTypeClass::ReadINI_Body @ 0x0075D3A0`
-    /// (body `0x0075D3A0`-`0x0075DEBD`) pushes 61 distinct key strings and
-    /// none of them is `Electric`; `search_strings ^Electric$` over the image
-    /// returns nothing. So there is no native `Electric=` warhead key to bind
-    /// to, and `+0x178` — the offset previously claimed here — is
-    /// `PsychicDamage=`. Stock `rulesmd.ini` authors no `Electric=` line, so
-    /// this field is always `false` in stock play.
-    pub electric: bool,
     /// Radiation contamination. `WarheadTypeClass+0x177`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d9c7` from the key string at
     /// `0x00839e80`. (`+0x179` is `AffectsAllies=`, not this.)
@@ -247,27 +238,12 @@ pub struct WarheadType {
     /// `0x00847CF4`), tested last in the detonation chain at
     /// `BulletClass::DetonateAtCoord @ 0x00469a2c`.
     pub nuke_maker: bool,
-
-    // --- Int fields ---
     /// `EMEffect=`, a bool at `WarheadTypeClass+0x154`: `ReadBool` at
     /// `0x0075D7C1` with the field as default, which the constructor zeroes
     /// (`0x0075CFB3`). The bullet's impact resolution skips its last snaps
     /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
     /// mounted by no stock weapon.
     pub em_effect: bool,
-    /// Money transfer on hit. Native offset **UNKNOWN** — VERA-internal,
-    /// gamemd equivalent UNCHECKED. `WarheadTypeClass::ReadINI_Body` reads no
-    /// `TransactMoney=` key (and no such string exists in the image);
-    /// `+0x17C` — the offset previously claimed here — is `ShakeXlo=`, an int.
-    /// Stock `rulesmd.ini` authors no `TransactMoney=` line, so this field is
-    /// always 0 in stock play.
-    pub transact_money: i32,
-    /// Infantry death type for cell-level kills. Native offset **UNKNOWN** —
-    /// VERA-internal, gamemd equivalent UNCHECKED. `WarheadTypeClass::ReadINI_Body`
-    /// writes nothing at `+0x114` and reads no `CellInfDeath=` key (no such
-    /// string exists in the image). Stock `rulesmd.ini` authors no
-    /// `CellInfDeath=` line, so this field is always 0 in stock play.
-    pub cell_inf_death: i32,
 
     // --- List fields ---
     /// `[VoxelAnims]` type names thrown on detonation.
@@ -390,7 +366,6 @@ impl WarheadType {
             mind_control: section.read_bool("MindControl", false),
             poison: section.read_bool("Poison", false),
             airstrike: section.read_bool("Airstrike", false),
-            electric: section.read_bool("Electric", false),
             radiation: section.read_bool("Radiation", false),
             culling: section.read_bool("Culling", false),
             paralyzes: section.read_int("Paralyzes", 0),
@@ -399,11 +374,7 @@ impl WarheadType {
             electric_assault: section.read_bool("ElectricAssault", false),
             bomb_disarm: section.read_bool("BombDisarm", false),
             nuke_maker: section.read_bool("NukeMaker", false),
-
-            // Int fields — all default 0
             em_effect: section.read_bool("EMEffect", false),
-            transact_money: section.read_int("TransactMoney", 0),
-            cell_inf_death: section.read_int("CellInfDeath", 0),
 
             // List fields
             debris_types,
@@ -566,7 +537,6 @@ mod tests {
 
         assert!(wh.mind_control);
         assert!(!wh.temporal);
-        assert!(!wh.electric);
         assert!(!wh.ivan_bomb);
     }
 

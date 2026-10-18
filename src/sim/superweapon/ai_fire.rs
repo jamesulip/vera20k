@@ -44,6 +44,7 @@ use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::{HouseDifficulty, HouseState};
 use crate::sim::intern::InternedId;
@@ -487,12 +488,17 @@ fn ground_rally_point(
     }
     let (x, y) = ground_rally_seed(&sim.houses, owner);
     let found = sim
-        .find_plain_passable_cell(
+        .nearby_passable_cell(
             (i32::from(x as i16), i32::from(y as i16)),
-            SpeedType::Foot,
-            None,
-            MovementZone::Normal,
-            (5, 5),
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type: SpeedType::Foot,
+                    required_zone_id: None,
+                    movement_zone: MovementZone::Normal,
+                    bridge_aware_zone: false,
+                },
+                NearbyFootprint::new(5, 5),
+            ),
         )
         .unwrap_or((0, 0));
     ground_rally_cell(found)

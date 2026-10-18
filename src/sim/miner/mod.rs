@@ -8,7 +8,6 @@
 //! - Part of sim/ -- may depend on rules/ for data-driven miner detection.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-mod exit_cell_search;
 mod harvest_mission;
 #[cfg(test)]
 pub mod miner_dock;
@@ -21,8 +20,6 @@ pub(crate) use refinery_dock::UnloadImage;
 #[path = "outbound_drive_tests.rs"]
 mod outbound_drive_tests;
 
-// Generic nearby-passable-cell search, reused by the tank-bunker exit placement.
-pub(crate) use self::exit_cell_search::find_nearby_passable_cell_with_index;
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{

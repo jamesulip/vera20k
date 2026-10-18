@@ -24,25 +24,6 @@ pub struct DebugEvent {
 
 #[derive(Clone, Debug)]
 pub enum DebugEventKind {
-    // -- Movement --
-    /// Locomotor phase changed (e.g., Idle → Accelerating).
-    PhaseChange {
-        from: String,
-        to: String,
-        reason: String,
-    },
-    /// A* repath was triggered.
-    Repath { reason: String, new_path_len: usize },
-    /// Movement blocked at a cell.
-    Blocked {
-        by_entity: Option<u64>,
-        cell: (u16, u16),
-    },
-    /// Stuck abort — path_stuck_counter exhausted or safety timeout.
-    StuckAbort { blocked_ticks: u16 },
-    /// Path segment (24 steps) completed, repathing toward final goal.
-    PathSegmentComplete { final_goal: Option<(u16, u16)> },
-
     // -- Miner --
     /// Miner high-level state changed (e.g., SearchOre → Harvest).
     MinerStateChange { from: String, to: String },
@@ -54,10 +35,6 @@ pub enum DebugEventKind {
     SpecialMovementPhase { phase: String },
     /// Special movement completed — returned to base locomotor.
     SpecialMovementEnd,
-
-    // -- Locomotor override --
-    /// Piggyback locomotor override started/ended (chrono miner, droppod).
-    LocomotorOverride { kind: String, active: bool },
 }
 
 impl Default for DebugEventLog {

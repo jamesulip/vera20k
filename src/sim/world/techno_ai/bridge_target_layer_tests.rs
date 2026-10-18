@@ -29,7 +29,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
         input["weapon_range"]
     );
     assert_eq!(
-        json!((weapon.minimum_range * SimFixed::from_num(256)).to_num::<i32>()),
+        json!(weapon.minimum_range_leptons),
         input["weapon_minimum_range"]
     );
     assert_eq!(rules.combat_damage.max_damage, 10_000);

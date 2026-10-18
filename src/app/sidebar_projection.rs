@@ -2,10 +2,12 @@
 //!
 //! Presentation consumers only read `current_view`. Membership, order and
 //! layout change at the explicit simulation, input, resize, and
-//! match-replacement transitions that rebuild the projection. The one per-frame
-//! write is [`SidebarProjectionState::refresh_cameo_availability`]: original
-//! `StripClass::Draw` asks each entry's availability while drawing, so those
-//! two drawing inputs follow the simulation between rebuilds.
+//! match-replacement transitions that rebuild the projection. Each object
+//! cameo's drawn state comes from one write,
+//! [`SidebarProjectionState::apply_cameo_draw_state`], on every rebuild and
+//! every frame: original `StripClass::Draw` asks each entry's availability and
+//! reads its Factory link while drawing, so that state follows the simulation
+//! between rebuilds.
 
 use std::collections::{HashMap, HashSet};
 
@@ -291,21 +293,22 @@ impl SidebarProjectionState {
         }
     }
 
-    /// Refresh the retained cameos' draw-time inputs
-    /// ([`crate::sim::production::cameo_draw_state`]) from the live simulation
-    /// without recomputing membership. Native `StripClass::Draw @ 0x006A9540`
-    /// asks `FindFactory(1, 1, 1)`, `CanBuild(type, 0, 0)` and `CheckBuildLimit`
-    /// again for every entry it draws, so a restriction that appears or clears
-    /// between two House rechecks must reach the very next frame. A retained
-    /// Factory link still clears the overlay (`0x006A98D3`).
-    ///
-    /// The view build supplies these two fields for a fresh projection; this
-    /// query is the same owner asked again, not a second decision.
-    pub(crate) fn refresh_cameo_availability(
-        &mut self,
+    /// Write every retained object cameo's drawn state into `view`
+    /// ([`crate::ui::sidebar::draw_object_cameo`]) from the live simulation:
+    /// its Factory link, request word, strip lock, stage/Ready/Hold and armed
+    /// placement. Native `StripClass::Draw @ 0x006A9540` re-asks
+    /// `FindFactory(1, 1, 1)`, `CanBuild(type, 0, 0)` and `CheckBuildLimit` and
+    /// re-reads each entry's linked Factory for every entry it draws, so a
+    /// rebuilt view and every later frame both take these fields from here; a
+    /// restriction that appears or clears between two House rechecks reaches
+    /// the very next frame. The view builder lays entries out only.
+    pub(crate) fn apply_cameo_draw_state(
+        &self,
+        view: &mut SidebarView,
         sim: &crate::sim::world::Simulation,
         rules: &crate::rules::ruleset::RuleSet,
         owner: InternedId,
+        armed_building: Option<InternedId>,
     ) {
         let linked: Vec<InternedId> = self
             .factory_links
@@ -351,9 +354,6 @@ impl SidebarProjectionState {
                 });
             }
         }
-        let Some(view) = self.current_view.as_mut() else {
-            return;
-        };
         for item in &mut view.items {
             // A super weapon's cameo darkens from its SuperClass readiness,
             // not from a build factory.
@@ -365,36 +365,44 @@ impl SidebarProjectionState {
             else {
                 continue;
             };
-            let draw = crate::sim::production::cameo_draw_state(sim, rules, owner, object);
             let tab = crate::ui::sidebar::SidebarTab::for_category(
                 crate::sim::production::category_for_object(object),
             );
-            let strip_blocks = object.category
-                == crate::rules::object_type::ObjectCategory::Building
-                && busy[tab.tab_index()];
-            let pending_state = pending
-                .iter()
-                .find_map(|(id, state)| (*id == type_id).then_some(*state));
-            let pending_running = pending_state == Some(CameoRequestState::Started);
-            // Request2 darkens even an Infantry/Vehicle source until its
-            // Factory arrives. A live link still overrides (Draw6A98D3).
-            item.enabled = linked.contains(&type_id)
-                || pending_running
-                || (pending_state.is_none() && draw.enabled && !strip_blocks);
-            item.at_build_limit = draw.at_build_limit;
-            // Draw reads the linked Factory stage/hold/completion every frame
-            // too. Updating only availability would leave the build clock and
-            // Ready/Hold text stale until another input rebuilt the view.
-            let status = statuses.iter().find(|status| status.type_id == type_id);
-            item.progress = status
-                .map_or(0.0, |status| {
-                    f32::from(status.progress) / f32::from(crate::sim::production::PRODUCTION_STEPS)
-                })
-                .clamp(0.0, 1.0);
-            item.is_ready = status.is_some_and(|status| status.is_ready);
-            item.is_building_this_type = status.is_some_and(|status| status.is_building);
-            item.is_on_hold = status.is_some_and(|status| status.is_on_hold);
+            crate::ui::sidebar::draw_object_cameo(
+                item,
+                &crate::ui::sidebar::ObjectCameoDrawInputs {
+                    linked: linked.contains(&type_id),
+                    request: pending
+                        .iter()
+                        .find_map(|(id, state)| (*id == type_id).then_some(*state)),
+                    draw: crate::sim::production::cameo_draw_state(sim, rules, owner, object),
+                    strip_blocks: object.category
+                        == crate::rules::object_type::ObjectCategory::Building
+                        && busy[tab.tab_index()],
+                    status: statuses
+                        .iter()
+                        .find(|status| status.type_id == type_id)
+                        .copied(),
+                    armed: armed_building == Some(type_id),
+                },
+            );
         }
+    }
+
+    /// The per-frame write: [`Self::apply_cameo_draw_state`] on the retained
+    /// view, without recomputing membership.
+    pub(crate) fn refresh_cameo_draw_state(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        owner: InternedId,
+        armed_building: Option<InternedId>,
+    ) {
+        let Some(mut view) = self.current_view.take() else {
+            return;
+        };
+        self.apply_cameo_draw_state(&mut view, sim, rules, owner, armed_building);
+        self.current_view = Some(view);
     }
 
     /// Validate foreign handles against the one Factory registry and retained

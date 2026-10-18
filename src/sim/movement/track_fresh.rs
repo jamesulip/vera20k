@@ -557,10 +557,15 @@ impl Simulation {
             .ok_or("Drive/Ship code-2 ladder without a track locomotor")?;
         // A batched re-path waits for the next frame's batch as if the timer
         // still ran (`path_batch`, a proposed deviation).
-        if self.defer_path_search(id, super::path_batch::WaitingRequest::Code2Ladder) {
+        if self.defer_path_search(
+            id,
+            super::path_batch::WaitingRequest::Code2Ladder { urgency },
+        ) {
             self.track_first_rejected_tail(id);
             return Ok(false);
         }
+        // An answered re-path searches at the urgency it registered at.
+        let urgency = self.batched_code2_urgency(id, urgency);
         let request = self.track_path_request(call, destination, urgency)?;
         let found = self.foot_find_path(&request, rules, call.registry, call.frame_effects)?;
         //4B3A13..4B3A2A: a vanished Foot sets the out byte.

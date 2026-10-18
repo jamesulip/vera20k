@@ -169,22 +169,7 @@ pub fn active_producer_for_owner_category(
         true,
         &sim.interner,
     );
-    let selected = candidates
-        .iter()
-        .find(|candidate| sim.production.is_primary_factory(candidate.0))
-        .cloned()
-        .or_else(|| candidates.into_iter().next())?;
-    let display_name = rules
-        .object(&selected.3)
-        .and_then(|obj| obj.name.clone())
-        .unwrap_or_else(|| selected.3.clone());
-    Some(ProducerFocusView {
-        stable_id: selected.0,
-        display_name,
-        category,
-        rx: selected.1,
-        ry: selected.2,
-    })
+    (!candidates.is_empty()).then_some(ProducerFocusView { category })
 }
 
 pub fn cycle_active_producer_for_owner_category(

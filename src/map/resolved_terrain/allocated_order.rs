@@ -221,18 +221,21 @@ impl InteriorCells {
 pub(super) struct AllocationCaches {
     order: OnceLock<(i32, Option<Arc<AllocatedCellOrder>>)>,
     interior: OnceLock<Option<Arc<InteriorCells>>>,
+    regular: OnceLock<bool>,
 }
 
 impl ResolvedTerrainGrid {
     /// Cells stored row-major, narrower than the 512 stride, so that no
     /// neighbour lookup wraps onto a real cell and a real cell's lookup
     /// index is its storage index.
-    fn is_regular(&self) -> bool {
-        let width = usize::from(self.width);
-        width < 512
-            && self.cells.iter().enumerate().all(|(index, cell)| {
-                usize::from(cell.rx) == index % width && usize::from(cell.ry) == index / width
-            })
+    pub(super) fn is_regular(&self) -> bool {
+        *self.allocation_caches.regular.get_or_init(|| {
+            let width = usize::from(self.width);
+            width < 512
+                && self.cells.iter().enumerate().all(|(index, cell)| {
+                    usize::from(cell.rx) == index % width && usize::from(cell.ry) == index / width
+                })
+        })
     }
 
     /// [`InteriorCells`], on a regular terrain.

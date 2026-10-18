@@ -8,7 +8,6 @@
 //! - `factory_ai`: a computer house's production at its own factory buildings
 //! - `production_queue`: queue views and completed mobile delivery
 //! - `production_spawn`: the ExitObject arm a mobile product leaves through
-//! - `production_economy`: resource harvesting and credit delivery
 //! - `production_placement`: building placement
 //! - `production_repair`: building repair and the computer's low-credit sale
 //! - `production_sell`: building sale
@@ -18,7 +17,6 @@ mod can_build;
 mod factory;
 mod factory_ai;
 mod factory_lifecycle;
-mod production_economy;
 mod production_placement;
 mod production_queue;
 mod production_refinery;
@@ -43,7 +41,6 @@ pub use self::factory_lifecycle::{
 pub use self::factory_lifecycle::{
     ProductionCancellation, cancel_production_for_owner, enqueue_by_type,
 };
-pub use self::production_economy::is_harvester_type;
 pub(crate) use self::production_placement::place_production_with_overlays;
 pub use self::production_placement::{
     active_producer_for_owner_category, cycle_active_producer_for_owner_category,
@@ -79,7 +76,7 @@ pub use self::production_tech::{
     initial_construction_options,
 };
 pub use self::production_tech::{
-    building_base_foundation_cells, building_movement_blocking_cells, is_matching_factory,
+    building_base_foundation_cells, building_movement_blocking_cells,
     producer_candidates_for_owner_category,
 };
 pub use self::production_types::*;

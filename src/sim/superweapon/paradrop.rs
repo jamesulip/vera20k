@@ -66,6 +66,7 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
@@ -167,12 +168,17 @@ fn drop_cell(sim: &Simulation, cell: (u16, u16)) -> Option<(u16, u16)> {
     if !terrain.native_cell_is_water_set_tile(identity) {
         return Some(cell);
     }
-    let nearby = sim.find_plain_passable_cell(
+    let nearby = sim.nearby_passable_cell(
         (i32::from(cell.0), i32::from(cell.1)),
-        SpeedType::Foot,
-        None,
-        MovementZone::Normal,
-        (1, 1),
+        NearbyArgs::plain(
+            PassabilityArgs {
+                speed_type: SpeedType::Foot,
+                required_zone_id: None,
+                movement_zone: MovementZone::Normal,
+                bridge_aware_zone: false,
+            },
+            NearbyFootprint::SINGLE,
+        ),
     );
     Some(retarget(&cells, cell, nearby))
 }

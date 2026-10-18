@@ -8,11 +8,12 @@ use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
+use crate::sim::occupancy::OccupancyGrid;
 
 /// The arm of `BuildingClass::ExitObject_Main @ 0x00443C60` that releases a
 /// produced Unit or Infantry. The producer's BuildingType alone picks it
@@ -222,106 +223,58 @@ impl Simulation {
 }
 
 /// The naval arm's Cell (`0x00444175..0x004443DC`) for a product of
-/// `speed_type`: [`find_naval_unit_delivery_cell`] from the producer.
-pub(super) fn naval_exit_cell(
-    sim: &Simulation,
-    producer_id: u64,
-    speed_type: SpeedType,
-) -> Option<(u16, u16)> {
-    let producer = sim.substrate.entities.get(producer_id)?;
-    let map_size = sim
-        .playfield_bounds
-        .zip(sim.playfield_size_height)
-        .map(|(bounds, height)| (bounds.base, height));
-    let (cell, _) = find_naval_unit_delivery_cell(
-        producer_id,
-        producer.position.rx(),
-        producer.position.ry(),
-        producer.rally_cell(),
-        speed_type,
-        sim.path_grid(),
-        &sim.substrate.occupancy,
-        &sim.substrate.raw_cell_occupation,
-        &sim.substrate.entities,
-        sim.resolved_terrain.as_ref(),
-        sim.overlay_grid.as_ref(),
-        sim.zone_grid.as_ref(),
-        // The frame counter is committed late: during this advance it holds
-        // the current frame, the value FNPC's pick must alias.
-        sim.session.binary_frame,
-        sim.playfield_bounds,
-        map_size,
-    );
-    Some(cell)
-}
-
-/// Active-retail produced-Unit naval delivery owner.
+/// `speed_type`.
 ///
 /// `BuildingClass::ExitObject_Main @ 0x00443C60` begins at the producer's
 /// `GetCoords` foundation centre, optionally walks out of the producer toward
 /// its own ArchiveTarget/rally cell, and otherwise invokes the one shared FNPC
 /// call at `0x004443DC`. FNPC failure is the literal zero cell; the caller still
 /// performs one normal Unlimbo attempt against that result.
-fn find_naval_unit_delivery_cell(
+pub(super) fn naval_exit_cell(
+    sim: &Simulation,
     producer_id: u64,
-    base_rx: u16,
-    base_ry: u16,
-    producer_rally: Option<(u16, u16)>,
     speed_type: SpeedType,
-    path_grid: Option<&crate::sim::pathfinding::PathGrid>,
-    occupancy: &OccupancyGrid,
-    raw_occupation: &RawCellOccupationGrid,
-    entities: &EntityStore,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-    zone_grid: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
-    frame_counter: u32,
-    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    map_size: Option<(i32, i32)>,
-) -> ((u16, u16), bool) {
-    let Some(origin) = producer_get_coords_cell(entities, producer_id) else {
-        return ((0, 0), false);
+) -> Option<(u16, u16)> {
+    let producer = sim.substrate.entities.get(producer_id)?;
+    let Some(origin) = producer_get_coords_cell(&sim.substrate.entities, producer_id) else {
+        return Some((0, 0));
     };
-
-    if let Some(rally) = producer_rally
+    if let Some(rally) = producer.rally_cell()
         && let Some(candidate) = naval_rally_fast_path_cell(
             producer_id,
-            (base_rx, base_ry),
+            (producer.position.rx(), producer.position.ry()),
             origin,
             rally,
-            occupancy,
-            entities,
-            resolved_terrain,
-            playfield_bounds,
+            &sim.substrate.occupancy,
+            &sim.substrate.entities,
+            sim.resolved_terrain.as_ref(),
+            sim.playfield_bounds,
         )
     {
-        return (candidate, true);
+        return Some(candidate);
     }
-
-    let Some(grid) = path_grid else {
-        return ((0, 0), false);
-    };
-    let Some(query) = nearby_query_for_naval_unit_delivery(
-        speed_type,
-        grid,
-        raw_occupation,
-        resolved_terrain,
-        overlay_grid,
-        zone_grid,
-        playfield_bounds,
-        map_size,
-    ) else {
-        return ((0, 0), false);
-    };
-    (
-        crate::sim::find_nearby_cell::find_nearby_passable_cell(
-            (i32::from(origin.0), i32::from(origin.1)),
-            &query,
-            frame_counter,
-        )
-        .unwrap_or((0, 0)),
-        false,
-    )
+    // 4443DC -> FNPC56DC20 -> rectangle56E7C0 -> Cell4834A0's Float arm reads
+    // the selected raw plane with both ignore flags false (56E854..858/
+    // 483550..570), so a marked yard footprint is no candidate and the later
+    // Unlimbo is not refused. Original control: factory_naval_output; shared
+    // raw goldens: tools/spatial_oracle/nearby_raw_occupation.{py,json,meta.json}.
+    // The caller passes a pointer to CellStruct(0,0): no target, the
+    // live-frame pick, no RNG draw; final object-list occupancy is off.
+    let cell = sim.nearby_passable_cell(
+        (i32::from(origin.0), i32::from(origin.1)),
+        NearbyArgs::plain(
+            PassabilityArgs {
+                // Unit vtable +0x84 -> +0x88 -> UnitType+0x67C.
+                speed_type,
+                required_zone_id: None,
+                // Caller argument5 is literal0 at 4443B4 (MovementZone::Normal).
+                movement_zone: MovementZone::Normal,
+                bridge_aware_zone: false,
+            },
+            NearbyFootprint::SINGLE,
+        ),
+    );
+    Some(cell.unwrap_or((0, 0)))
 }
 
 /// The producing building's GetCoords (`BuildingClass::GetCoords @
@@ -402,60 +355,6 @@ fn naval_rally_walk_candidate(
         );
     }
     candidate
-}
-
-fn nearby_query_for_naval_unit_delivery<'a>(
-    speed_type: SpeedType,
-    grid: &'a crate::sim::pathfinding::PathGrid,
-    raw_occupation: &'a RawCellOccupationGrid,
-    resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-    overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
-    zone_grid: Option<&'a crate::sim::pathfinding::zone_map::ZoneGrid>,
-    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    map_size: Option<(i32, i32)>,
-) -> Option<crate::sim::find_nearby_cell::NearbyQuery<'a>> {
-    use crate::sim::find_nearby_cell::{
-        NearbyFootprint, NearbyQuery, PassabilityArgs, map_owned_radius_cap,
-    };
-    let (size_width, size_height) = map_size?;
-    Some(NearbyQuery {
-        native_cells: None,
-        // 4443DC -> FNPC56DC20 -> rectangle56E7C0 -> Cell4834A0's Float
-        // arm reads the selected raw plane with both ignore flags false
-        // (56E854..858/483550..570). Final object-list occupancy being off
-        // does not admit a marked yard footprint. Reuse the live grid owner;
-        // otherwise FNPC picks inside the yard and the later Unlimbo refuses.
-        // Original control: factory_naval_output; shared raw goldens:
-        // tools/spatial_oracle/nearby_raw_occupation.{py,json,meta.json}.
-        raw_occupation: Some(raw_occupation),
-        passability: PassabilityArgs {
-            // Unit vtable +0x84 -> +0x88 -> UnitType+0x67C.
-            speed_type,
-            required_zone_id: None,
-            // Caller argument5 is literal0 at 4443B4 (MovementZone::Normal).
-            movement_zone: MovementZone::Normal,
-            bridge_aware_zone: false,
-        },
-        footprint: NearbyFootprint::SINGLE,
-        allow_bridge_cells: true,
-        check_height: false,
-        // Final object-list occupancy is off; Cell passability still reads
-        // the actual occupation bytes above. Unlimbo then owns CanEnter/Mark.
-        check_occupancy: false,
-        radius_cap: map_owned_radius_cap(size_width, size_height),
-        // The caller passes a pointer to CellStruct(0,0); FNPC maps that value
-        // to live-frame modulo selection with no RNG draw.
-        target_cell: None,
-        path_grid: Some(grid),
-        resolved_terrain,
-        overlay_grid,
-        // Do not substitute CellRect's compatibility object-list projection
-        // for those raw bytes or add FNPC's disabled final occupancy check.
-        occupancy: None,
-        entities: None,
-        zone_grid,
-        playfield_bounds,
-    })
 }
 
 /// Naval ExitObject's selected Cell goes through the same concrete Unlimbo

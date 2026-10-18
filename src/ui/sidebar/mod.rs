@@ -25,7 +25,7 @@ pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
-pub(crate) use sidebar_view::CameoFactoryStatus;
+pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
 /// Cameo hit zones are fixed 60×48 (`6A8220`), independent of artwork size.
 pub(crate) const CAMEO_COLUMNS: usize = 2;
@@ -154,9 +154,10 @@ pub struct SidebarItem {
     /// Native retained-entry flash phase (StripDraw6A9B59).
     pub flash_darkened: bool,
     pub queue_category: ProductionCategory,
-    /// Draw's unavailable overlay; it is not an input admission gate. The
-    /// projection recomputes it from the live simulation every frame, as
-    /// `StripClass::Draw` does (crate::sim::production::cameo_draw_state).
+    /// Draw's unavailable overlay; it is not an input admission gate. For an
+    /// object cameo, [`draw_object_cameo`] writes it and the drawn state below
+    /// from the projection's live inputs on every rebuild and frame, as
+    /// `StripClass::Draw` does.
     pub enabled: bool,
     pub at_build_limit: bool,
     pub progress: f32,

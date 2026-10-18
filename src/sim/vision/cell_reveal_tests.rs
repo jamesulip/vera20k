@@ -378,8 +378,22 @@ fn native_trigger_reveal_edge_channels_match_all_original_masks_and_center_gates
     let viewer = crate::sim::intern::test_intern("Player");
     let (mut fog, terrain) = native_map_cell_fixture(&controls["topology"], viewer);
     let cells = NativeCellQuery::canonical(&terrain);
+    // The same center on a copy whose cells are not all row-major, so it
+    // has no interior cells and every frame looks its neighbours up.
+    let looked_up = {
+        let mut cells = terrain.cells().to_vec();
+        cells.swap(0, 1);
+        ResolvedTerrainGrid::from_cells(terrain.width(), terrain.height(), cells)
+    };
+    assert!(terrain.interior_cells().is_some() && looked_up.interior_cells().is_none());
+    let looked_up = NativeCellQuery::canonical(&looked_up);
     let center = (9, 10);
-    for channel in 0..2usize {
+    for (channel, cells) in [
+        (0usize, &cells),
+        (1, &cells),
+        (0, &looked_up),
+        (1, &looked_up),
+    ] {
         for (mask, expected) in controls["channel_mask_outputs"][channel]
             .as_array()
             .unwrap()
@@ -405,7 +419,7 @@ fn native_trigger_reveal_edge_channels_match_all_original_masks_and_center_gates
                 }
             }
             assert_eq!(
-                i64::from(fog.map_cell_edge_frame(viewer, center, channel != 0, Some(&cells))),
+                i64::from(fog.map_cell_edge_frame(viewer, center, channel != 0, Some(cells))),
                 expected.as_i64().unwrap(),
                 "channel{channel} mask{mask}"
             );

@@ -40,6 +40,7 @@ pub struct WaveRecordedCell {
 }
 
 impl WaveRecordedCell {
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn real(rx: u16, ry: u16) -> Self {
         Self {
             identity: WaveCellIdentity::Real {
@@ -48,6 +49,7 @@ impl WaveRecordedCell {
         }
     }
 
+    #[cfg(test)]
     pub const fn shared_dummy() -> Self {
         Self {
             identity: WaveCellIdentity::SharedDummy,
@@ -105,16 +107,6 @@ pub struct WaveDamageRequest {
     pub firer_id: u64,
     pub recorded_cells: Vec<WaveRecordedCell>,
     pub wave_z: i32,
-}
-
-pub const WAVE_DISPLAY_REGISTRATION_BUCKET: u8 = 3;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum WaveColorMode {
-    FramebufferSonicDistortion,
-    FixedLaserChannelAdd,
-    FramebufferMagnetronDistortion,
-    None,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -261,21 +253,6 @@ impl Wave {
             load_f32(root),
             X87Chop53::load_i32(CONSTRUCTOR_MIN_XY_DISTANCE),
         ) != X87Ordering::Less
-    }
-
-    /// No reader yet; kept because the wave-type mapping is recorded nowhere else.
-    pub const fn color_mode(&self) -> WaveColorMode {
-        match self.wave_type {
-            0 => WaveColorMode::FramebufferSonicDistortion,
-            1 | 2 => WaveColorMode::FixedLaserChannelAdd,
-            3 => WaveColorMode::FramebufferMagnetronDistortion,
-            _ => WaveColorMode::None,
-        }
-    }
-
-    /// No reader yet; see `color_mode`.
-    pub const fn registration_bucket(&self) -> u8 {
-        WAVE_DISPLAY_REGISTRATION_BUCKET
     }
 
     /// Draw_Magnetic762070 establishes corners0/1/2/3. Update_Wave762AF0

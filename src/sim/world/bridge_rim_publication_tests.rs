@@ -75,11 +75,24 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
         input["bridge_base"].as_i64().unwrap() as i32,
         ini.as_bytes(),
     ));
-    let size = serde_json::from_value(input["size"].clone()).unwrap();
+    let size: (i32, i32) = serde_json::from_value(input["size"].clone()).unwrap();
     let state = BridgeRuntimeState::from_resolved_terrain_with_map_size(&terrain, true, 1, size);
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
+    // Map load installs the same Size, with its LocalSize, beside the bridges.
+    let local: [u32; 4] = serde_json::from_value(input["local_size"].clone()).unwrap();
+    sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+        theater: input["theater"].as_str().unwrap().to_owned(),
+        fill: "Clear".to_owned(),
+        level: 0,
+        width: size.0 as u32,
+        height: size.1 as u32,
+        local_left: local[0],
+        local_top: local[1],
+        local_width: local[2],
+        local_height: local[3],
+    });
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.bridge_state = Some(state);
     sim.overlay_grid = Some(grid);

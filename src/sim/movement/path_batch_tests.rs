@@ -13,6 +13,9 @@ use crate::util::fixed_math::SIM_ONE;
 const EAST: u16 = 0x4000;
 const WEST: u16 = 0xC000;
 const WEST_STEP: u8 = 6;
+/// A code-2 re-path at urgency 1, as a Foot whose blockage timer has not run
+/// out asks it.
+const CODE2: WaitingRequest = WaitingRequest::Code2Ladder { urgency: 1 };
 
 /// A tank, a tank that cannot move, an infantryman and a one-cell building.
 fn rules() -> RuleSet {
@@ -122,14 +125,14 @@ fn a_batched_answer_is_the_serial_search() {
     let rules = rules();
     for (kind, urgency) in [
         (WaitingRequest::NoQueue, 0),
-        (WaitingRequest::Code2Ladder, 1),
-        (WaitingRequest::Code2Ladder, 2),
+        (CODE2, 1),
+        (WaitingRequest::Code2Ladder { urgency: 2 }, 2),
     ] {
         for mover in 0..2 {
             let search = |batched: bool| {
                 let (mut sim, movers) = jam(&rules);
                 let id = movers[mover];
-                if kind == WaitingRequest::Code2Ladder {
+                if kind != WaitingRequest::NoQueue {
                     let frame = sim.session.binary_frame;
                     let runtime = &mut sim
                         .substrate
@@ -149,7 +152,9 @@ fn a_batched_answer_is_the_serial_search() {
                 }
                 let request = match kind {
                     WaitingRequest::NoQueue => sim.no_queue_request(id),
-                    WaitingRequest::Code2Ladder => sim.code2_ladder_request(id),
+                    WaitingRequest::Code2Ladder { urgency } => {
+                        sim.code2_ladder_request(id, urgency)
+                    }
                 }
                 .expect("a request");
                 assert_eq!(request.urgency, urgency);
@@ -158,12 +163,13 @@ fn a_batched_answer_is_the_serial_search() {
                     .expect("Find_Path runs");
                 if batched {
                     let batch = sim.path_batch.as_ref().unwrap();
-                    assert_eq!(batch.used[kind as usize], 1, "Find_Path used the answer");
+                    assert_eq!(batch.used[kind.kind()], 1, "Find_Path used the answer");
                     assert_eq!(
                         batch.ready[&id],
                         ReadySlot {
                             claimed: true,
-                            answer: None
+                            request: kind,
+                            answer: None,
                         }
                     );
                 }
@@ -180,32 +186,20 @@ fn a_batched_answer_is_the_serial_search() {
     }
 }
 
-/// An answer serves only the request it was computed for: a ladder whose
-/// blockage timer latched after the batch asks at urgency 2 and searches for
-/// itself.
+/// An answer serves only the request it was computed for: the same ladder
+/// asking at urgency 2 searches for itself.
 #[test]
 fn an_answer_for_another_request_is_not_used() {
     let rules = rules();
     let (mut sim, [tank, _]) = jam(&rules);
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, WaitingRequest::Code2Ladder));
+    assert!(sim.defer_path_search(tank, CODE2));
     sim.answer_batched_path_searches(Some(&rules), None);
     assert!(
-        !sim.defer_path_search(tank, WaitingRequest::Code2Ladder),
+        !sim.defer_path_search(tank, CODE2),
         "an answered Foot no longer waits"
     );
-    let frame = sim.session.binary_frame;
-    let runtime = &mut sim
-        .substrate
-        .entities
-        .get_mut(tank)
-        .unwrap()
-        .navigation
-        .path_runtime;
-    runtime.set_path_blocked(true);
-    runtime.start_blocked(frame, 0);
-    let request = sim.code2_ladder_request(tank).unwrap();
-    assert_eq!(request.urgency, 2);
+    let request = sim.code2_ladder_request(tank, 2).unwrap();
     sim.foot_find_path(&request, &rules, None, FrameEffects::default())
         .expect("Find_Path runs");
     let batch = sim.path_batch.as_ref().unwrap();
@@ -216,6 +210,150 @@ fn an_answer_for_another_request_is_not_used() {
     );
 }
 
+/// A code-2 re-path a capped pass leaves out keeps the urgency it registered
+/// at while its Foot registers it again, and loses it when a pass finds no
+/// registration at all. The kept urgencies are saved and hashed.
+#[test]
+fn a_left_out_code2_repath_keeps_its_urgency() {
+    let rules = rules();
+    let (mut sim, [tank, infantry]) = jam(&rules);
+    sim.batch_path_searches();
+    let others = 1_000_000..1_000_000 + SEARCHES_PER_PASS as u64;
+    let leave_out = |sim: &mut Simulation| {
+        for id in others.clone() {
+            assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+        }
+        sim.path_batch.as_mut().unwrap().next_turn = others.start;
+        sim.answer_batched_path_searches(Some(&rules), None);
+        sim.finish_batched_path_searches();
+    };
+    assert!(sim.defer_path_search(tank, CODE2));
+    assert!(sim.defer_path_search(infantry, CODE2));
+    leave_out(&mut sim);
+    let batch = sim.path_batch.as_ref().unwrap();
+    assert!(!batch.answered.contains(&tank) && !batch.answered.contains(&infantry));
+    assert_eq!(
+        batch.left_out_code2,
+        BTreeMap::from([(tank, 1), (infantry, 1)])
+    );
+
+    // The tank asks again at urgency 2 and keeps 1; the infantryman asks a
+    // no-queue request instead.
+    let urgent = WaitingRequest::Code2Ladder { urgency: 2 };
+    assert!(sim.defer_path_search(tank, urgent));
+    assert!(sim.defer_path_search(infantry, WaitingRequest::NoQueue));
+    assert_eq!(
+        sim.path_batch.as_ref().unwrap().pending[..2],
+        [(tank, CODE2), (infantry, WaitingRequest::NoQueue)]
+    );
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "left_out_code2", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .expect("the save loads")
+        .sim;
+    assert_eq!(
+        restored.path_batch.as_ref().unwrap().left_out_code2,
+        BTreeMap::from([(tank, 1), (infantry, 1)])
+    );
+    let hash = sim.state_hash();
+    let kept = std::mem::take(&mut sim.path_batch.as_mut().unwrap().left_out_code2);
+    assert_ne!(sim.state_hash(), hash, "the kept urgencies are hashed");
+    sim.path_batch.as_mut().unwrap().left_out_code2 = kept;
+
+    leave_out(&mut sim);
+    assert_eq!(
+        sim.path_batch.as_ref().unwrap().left_out_code2,
+        BTreeMap::from([(tank, 1)]),
+        "only the code-2 re-path is kept"
+    );
+    // A pass with no registration at all keeps nothing.
+    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.finish_batched_path_searches();
+    assert!(sim.path_batch.as_ref().unwrap().left_out_code2.is_empty());
+    assert!(sim.defer_path_search(tank, urgent));
+    assert_eq!(sim.path_batch.as_ref().unwrap().pending, [(tank, urgent)]);
+}
+
+/// A tank, then an infantryman, blocked with code 2 behind a tank that
+/// cannot move registers a re-path at urgency 1. Then a full turn of other
+/// registrations goes first every frame: its blockage timer runs out as it
+/// waits, and once the pass answers it, its own ladder (Drive's, then
+/// Walk's) takes the answer, searched at the urgency 1 it first asked at.
+#[test]
+fn a_ladder_left_out_past_its_blockage_timer_takes_its_first_urgency() {
+    let rules = rules();
+    let delay = rules.general.blockage_path_delay_ticks;
+    assert!(delay > 0, "the blockage timer runs: {delay}");
+    let others = 1_000_000..1_000_000 + SEARCHES_PER_PASS as u64;
+    for follower in ["TANK", "E1"] {
+        let (mut sim, grid) = arena(&rules);
+        for x in 6..18 {
+            spawn(&mut sim, &rules, "HUT", (x, 9));
+            spawn(&mut sim, &rules, "HUT", (x, 11));
+        }
+        let mover = spawn(&mut sim, &rules, follower, (8, 10));
+        let stuck = spawn(&mut sim, &rules, "STUCK", (12, 10));
+        send(&mut sim, &rules, mover, (24, 10));
+        send(&mut sim, &rules, stuck, (24, 10));
+        sim.batch_path_searches();
+        let live = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(mover)
+                .unwrap()
+                .navigation
+                .path_runtime
+                .code2_urgency(sim.session.binary_frame)
+        };
+        // It routes, rolls up to the stuck tank and registers a re-path.
+        for _ in 0..300 {
+            if sim
+                .path_batch
+                .as_ref()
+                .unwrap()
+                .pending
+                .contains(&(mover, CODE2))
+            {
+                break;
+            }
+            sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+        }
+        assert!(
+            sim.path_batch
+                .as_ref()
+                .unwrap()
+                .pending
+                .contains(&(mover, CODE2)),
+            "{follower} is blocked with code 2"
+        );
+        let mut left_out_at_2 = 0;
+        for _ in 0..300 {
+            for id in others.clone() {
+                assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+            }
+            sim.path_batch.as_mut().unwrap().next_turn = others.start;
+            sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+            let batch = sim.path_batch.as_ref().unwrap();
+            assert!(!batch.answered.contains(&mover), "{follower} waits");
+            if batch.pending.contains(&(mover, CODE2)) && live(&sim) == 2 {
+                left_out_at_2 += 1;
+                if left_out_at_2 == 3 {
+                    break;
+                }
+            }
+        }
+        assert_eq!(left_out_at_2, 3, "{follower} waits past its blockage timer");
+        let used = sim.path_batch.as_ref().unwrap().used[CODE2.kind()];
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+        let batch = sim.path_batch.as_ref().unwrap();
+        assert!(batch.answered.contains(&mover), "{follower} is answered");
+        assert_eq!(
+            batch.used[CODE2.kind()],
+            used + 1,
+            "{follower}'s ladder takes the urgency-1 answer"
+        );
+    }
+}
+
 /// A request whose target redirects (a building on the destination) is left
 /// to the Foot's own Find_Path, which retargets its NavCom before searching.
 #[test]
@@ -223,7 +361,7 @@ fn a_redirected_request_is_left_to_find_path() {
     let rules = rules();
     let (mut sim, [tank, _]) = jam(&rules);
     spawn(&mut sim, &rules, "HUT", (20, 10));
-    let destination = sim.code2_ladder_request(tank).unwrap().destination;
+    let destination = sim.code2_ladder_request(tank, 1).unwrap().destination;
     let answer = sim
         .find_path_target_answer(tank, destination, &rules, None)
         .unwrap()
@@ -235,10 +373,10 @@ fn a_redirected_request_is_left_to_find_path() {
         "the building on the destination redirects (code {answer})"
     );
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, WaitingRequest::Code2Ladder));
+    assert!(sim.defer_path_search(tank, CODE2));
     sim.answer_batched_path_searches(Some(&rules), None);
     assert_eq!(sim.path_batch.as_ref().unwrap().ready[&tank].answer, None);
-    let request = sim.code2_ladder_request(tank).unwrap();
+    let request = sim.code2_ladder_request(tank, 1).unwrap();
     sim.foot_find_path(&request, &rules, None, FrameEffects::default())
         .expect("Find_Path runs");
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [0, 0]);
@@ -246,8 +384,9 @@ fn a_redirected_request_is_left_to_find_path() {
 
 /// Each answer is its search's own, whatever thread ran it: the same
 /// searches one at a time on this thread, reading every entry fact from the
-/// world, agree, for no-queue requests and code-2 ladders. Movers along the
-/// map edge stamp the shared Dummy from their finishing passes.
+/// world, agree, for no-queue requests and code-2 ladders, the urgency-2
+/// ones started first. Movers along the map edge stamp the shared Dummy from
+/// their finishing passes.
 #[test]
 fn batched_answers_do_not_depend_on_the_threads() {
     let rules = rules();
@@ -258,11 +397,12 @@ fn batched_answers_do_not_depend_on_the_threads() {
         send(&mut sim, &rules, tank, (29 - 2 * i, 1));
         let infantry = spawn(&mut sim, &rules, "E1", (1, 3 + 2 * i));
         send(&mut sim, &rules, infantry, (1, 29 - 2 * i));
-        // Tanks repeat a no-queue request, infantrymen a code-2 ladder's.
-        movers.extend([
-            (tank, WaitingRequest::NoQueue),
-            (infantry, WaitingRequest::Code2Ladder),
-        ]);
+        // Tanks repeat a no-queue request, infantrymen a code-2 ladder's,
+        // every third at urgency 2.
+        let ladder = WaitingRequest::Code2Ladder {
+            urgency: if i % 3 == 2 { 2 } else { 1 },
+        };
+        movers.extend([(tank, WaitingRequest::NoQueue), (infantry, ladder)]);
     }
     sim.batch_path_searches();
     for &(id, request) in &movers {
@@ -415,10 +555,10 @@ fn a_waiting_ladder_uses_its_answer_the_next_frame() {
                     runtime.movement_timer().expired(frame),
                     "{follower}: a Foot that waits asks again"
                 );
-                waited += usize::from(kind == WaitingRequest::Code2Ladder);
+                waited += usize::from(kind != WaitingRequest::NoQueue);
             }
         }
-        let used = sim.path_batch.as_ref().unwrap().used[WaitingRequest::Code2Ladder as usize];
+        let used = sim.path_batch.as_ref().unwrap().used[CODE2.kind()];
         assert!(
             waited > 0 && used > 0,
             "{follower}: code-2 ladders waited {waited}, used {used}"
@@ -433,7 +573,7 @@ fn registrations_survive_a_save_and_answers_do_not() {
     let rules = rules();
     let (mut sim, [tank, infantry]) = jam(&rules);
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, WaitingRequest::Code2Ladder));
+    assert!(sim.defer_path_search(tank, CODE2));
     sim.answer_batched_path_searches(Some(&rules), None);
     assert!(sim.defer_path_search(infantry, WaitingRequest::NoQueue));
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "path_batch", 0);
@@ -462,7 +602,7 @@ fn answers_expire_with_their_pass() {
         .map(|grid| (*grid).clone())
         .unwrap();
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, WaitingRequest::Code2Ladder));
+    assert!(sim.defer_path_search(tank, CODE2));
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.answered, [tank], "the pass answered the tank");
@@ -488,29 +628,22 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
         !sim.defer_path_search(tank, WaitingRequest::NoQueue),
         "the first request searches"
     );
-    assert!(
-        sim.defer_path_search(tank, WaitingRequest::Code2Ladder),
-        "a later one waits"
-    );
+    assert!(sim.defer_path_search(tank, CODE2), "a later one waits");
     assert!(
         sim.defer_path_search(infantry, WaitingRequest::NoQueue),
         "an unanswered Foot waits"
     );
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending,
-        [
-            (tank, WaitingRequest::Code2Ladder),
-            (infantry, WaitingRequest::NoQueue)
-        ]
+        [(tank, CODE2), (infantry, WaitingRequest::NoQueue)]
     );
     assert!(sim.defer_path_search(tank, WaitingRequest::NoQueue));
     sim.answer_batched_path_searches(Some(&rules), None);
-    let answer = sim.path_batch.as_ref().unwrap().ready[&tank]
-        .answer
-        .as_ref();
+    let slot = &sim.path_batch.as_ref().unwrap().ready[&tank];
+    assert!(slot.answer.is_some());
     assert_eq!(
-        answer.map(|answer| answer.request),
-        Some(WaitingRequest::NoQueue),
+        slot.request,
+        WaitingRequest::NoQueue,
         "the latest registration stands"
     );
 }

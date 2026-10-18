@@ -290,10 +290,6 @@ impl JumpjetFlight {
         }
     }
 
-    pub fn current_speed(&self) -> f64 {
-        f64::from_bits(self.current_speed_bits)
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub fn target_speed(&self) -> f64 {
         f64::from_bits(self.target_speed_bits)

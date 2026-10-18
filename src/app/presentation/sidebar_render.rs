@@ -291,19 +291,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
                 sidebar::ArmedSidebarEntry::SuperWeapon(section.clone())
             }
         });
-    let factory_statuses = state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .factory_statuses(
-            &state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .expect("sidebar runtime")
-                .simulation,
-            owner,
-        );
     let mut view = sidebar::build_sidebar_view_with_spec(
         state.match_state.match_presentation.sidebar_layout_spec,
         screen_w,
@@ -314,7 +301,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         power_drained,
         tab_btn_size,
         &queue_items,
-        &factory_statuses,
         &build_options,
         &ready_buildings,
         armed_entry.as_ref(),
@@ -370,26 +356,44 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             item.has_cameo_art = atlas.cameo(&item.type_id, item.alt_cameo).is_some();
         }
     }
+    // The rebuilt view takes its drawn cameo state from the same projection
+    // write as every later frame, so it is never built from other rules.
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        let sim = &runtime.simulation;
+        let armed_building = armed_entry
+            .as_ref()
+            .and_then(sidebar::ArmedSidebarEntry::as_building_placement)
+            .and_then(|name| sim.interner.get(name));
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .apply_cameo_draw_state(
+                &mut view,
+                sim,
+                &runtime.resources.rules,
+                owner,
+                armed_building,
+            );
+    }
     state
         .match_state
         .match_presentation
         .sidebar_projection
         .replace_view(Some(view));
-    // A rebuilt view starts from the update-time answers; keep the drawn ones
-    // authoritative from its first frame on.
-    refresh_sidebar_cameo_availability(state);
 }
 
-/// The per-frame part of the projection: the retained cameos' `StripDraw`
-/// unavailability inputs, taken from the live simulation. `StripClass::Draw @
-/// 0x006A9540` asks `FindFactory(1, 1, 1)`, `CanBuild(type, 0, 0)` and
-/// `CheckBuildLimit` for every entry it draws, so a restriction that appears or
-/// clears between two House rechecks must reach the very next frame. Membership
-/// and the House pass stay with [`refresh_sidebar_projection`].
-pub(crate) fn refresh_sidebar_cameo_availability(state: &mut AppState) {
+/// The per-frame part of the projection: each retained object cameo's drawn
+/// state from the live simulation (`apply_cameo_draw_state`).
+/// `StripClass::Draw @ 0x006A9540` asks `FindFactory(1, 1, 1)`,
+/// `CanBuild(type, 0, 0)` and `CheckBuildLimit` and reads the linked Factory
+/// for every entry it draws, so a restriction that appears or clears between
+/// two House rechecks must reach the very next frame. Membership and the House
+/// pass stay with [`refresh_sidebar_projection`].
+pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
     // Without a current House the projection's owner comes from the sandbox
     // guess, whose resolution scans every entity and each candidate's build
-    // options. That debug path keeps its update-time values.
+    // options. That debug path keeps the drawn state of its last rebuild.
     if state
         .match_state
         .sim_runtime
@@ -403,15 +407,18 @@ pub(crate) fn refresh_sidebar_cameo_availability(state: &mut AppState) {
     let Some(runtime) = match_state.sim_runtime.as_ref() else {
         return;
     };
-    let owner = runtime
-        .simulation
-        .interner
-        .get(&owner_name)
-        .unwrap_or_default();
+    let sim = &runtime.simulation;
+    let owner = sim.interner.get(&owner_name).unwrap_or_default();
+    let armed_building = match_state
+        .input
+        .targeting_mode
+        .as_ref()
+        .and_then(crate::app::types::TargetingMode::as_building_placement)
+        .and_then(|name| sim.interner.get(name));
     match_state
         .match_presentation
         .sidebar_projection
-        .refresh_cameo_availability(&runtime.simulation, &runtime.resources.rules, owner);
+        .refresh_cameo_draw_state(sim, &runtime.resources.rules, owner, armed_building);
 }
 
 // ---------------------------------------------------------------------------
@@ -484,7 +491,7 @@ pub(crate) fn minimap_camera_target(
             view.simulation(),
             &runtime.resources.rules,
             view.resolved_terrain()?,
-            view.playfield_map_size()?,
+            view.simulation().map_size_diamond()?,
         ))
     });
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);

@@ -844,6 +844,19 @@ impl ResolvedTerrainGrid {
 
     pub(crate) fn native_cell_coord(&self, cell: NativeCellIdentity) -> (i16, i16) {
         match cell {
+            NativeCellIdentity::Real(index) if self.is_regular() => {
+                // A regular terrain's cells are stored row-major, so the
+                // index gives the coordinate without reading the cell.
+                assert!(index < self.cells.len(), "a real cell's index is in range");
+                let width = usize::from(self.width);
+                let coord = ((index % width) as i16, (index / width) as i16);
+                debug_assert_eq!(
+                    coord,
+                    (self.cells[index].rx as i16, self.cells[index].ry as i16),
+                    "a regular terrain's cells are stored row-major"
+                );
+                coord
+            }
             NativeCellIdentity::Real(index) => {
                 (self.cells[index].rx as i16, self.cells[index].ry as i16)
             }

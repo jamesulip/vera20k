@@ -44,9 +44,7 @@ impl Simulation {
             .playfield_bounds
             .ok_or("rally input lacks playfield bounds")?;
         let size = self
-            .playfield_size_height
-            .map(|height| (bounds.base, height))
-            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())
+            .map_size_diamond()
             .ok_or("rally input lacks native map dimensions")?;
         let cells = NativeCellQuery::isolated(terrain);
         resolve_rally_cell_click(
@@ -63,9 +61,8 @@ impl Simulation {
                 naval: object.naval,
             },
         )
-        // A miss sends no rally event and keeps ArchiveTarget. The separate
-        // redeployable ConstructionYard branch requires its repack/move owner;
-        // it is not admitted by the current HasRallyPoint cell-click route.
+        // A miss sends no rally event and keeps ArchiveTarget. The click
+        // owner still queues the following SELL for an UndeploysInto type.
     }
 }
 

@@ -52,6 +52,7 @@ fn make_test_entity(type_id: &str, category: EntityCategory) -> MapEntity {
         structure_upgrades: [None, None, None],
         structure_ai_sellable: false,
         structure_ai_repairable: false,
+        structure_online: true,
         trigger_tag: None,
     }
 }
@@ -3399,19 +3400,10 @@ fn sonic_fire_event(
     .coord;
     SimFireEvent {
         attacker_id,
-        attacker_type_ref: sim.interner.intern("DLPH"),
         weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
         weapon_id: sim.interner.intern("SonicZap"),
         facing: 0,
-        veterancy: 0,
-        origin_snapshot: FireOriginSnapshot {
-            rx: 0,
-            ry: 0,
-            sub_x: SimFixed::from_num(0),
-            sub_y: SimFixed::from_num(0),
-            z: 0,
-            facing: 0,
-        },
+        origin_snapshot: FireOriginSnapshot { facing: 0 },
         target: crate::sim::combat::TargetKind::Entity(target_id),
         report_sound_id: None,
         fire_coord,
@@ -6232,8 +6224,13 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
         .expect("spawn second MTNK");
     assert!(sim.try_select_object(tank, UninitContext::new(Some(&rules), None)));
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
-    sim.substrate.entities.get_mut(tank).unwrap().temporal =
-        crate::sim::temporal::TemporalState::warped_by_for_test(wingman);
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+            wingman,
+        ));
 
     assert!(
         sim.substrate
@@ -6963,6 +6960,7 @@ fn move_event_issuer_does_not_replace_actor_owner() {
             structure_upgrades: [None, None, None],
             structure_ai_sellable: false,
             structure_ai_repairable: false,
+            structure_online: true,
             trigger_tag: None,
         }],
         None,
@@ -7244,6 +7242,7 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
                 structure_upgrades: [None, None, None],
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
+                structure_online: true,
                 trigger_tag: None,
             },
             MapEntity {
@@ -7263,6 +7262,7 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
                 structure_upgrades: [None, None, None],
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
+                structure_online: true,
                 trigger_tag: None,
             },
         ],

@@ -1987,8 +1987,8 @@ impl DifficultyRules {
 }
 
 /// The single BuildingTypes `RulesClass::ReadGeneral` names in `[General]`,
-/// as stored IDs (`read_building_identity`; the layered reader in
-/// `native_processing` replaces the projection).
+/// as stored IDs. The ordered Process owner (`native_processing`) reads them
+/// pass by pass; `RuleSet` publishes its result.
 ///
 /// The gates and WallTower (`Rules+0x86C..+0x87C`, read at
 /// `0x0066F450..0x0066F583`) are the types `CellClass::Is_Clear_To_Build` lets
@@ -2035,24 +2035,6 @@ impl GeneralBuildingTypes {
                 name.as_deref()
                     .is_some_and(|name| name.eq_ignore_ascii_case(type_id))
             })
-    }
-}
-
-/// ReadGeneral's BuildingType identity reads (PrismType `0x0067BCE0`, the
-/// gates and WallTower `0x0066F450..0x0066F583`): ReadString128 into a local
-/// buffer; an empty value keeps the current pointer, anything else goes
-/// through BuildingType FindOrAllocate (`0x004653C0`), whose `<none>` and
-/// `none` answer null. PrerequisiteProcAlternate reads a UnitType the same
-/// way (`0x007480D0`).
-fn read_building_identity(
-    general: &IniSection,
-    key: &str,
-    current: Option<String>,
-) -> Option<String> {
-    match general.read_name(key, 0x80) {
-        None => current,
-        Some(name) if is_native_none_type_name(name) => None,
-        Some(name) => Some(name.to_ascii_uppercase()),
     }
 }
 
@@ -2162,6 +2144,7 @@ impl Default for GeneralRules {
             // RulesClass__Constructor @ 0x00665650 writes the double
             // 0x3F9EB851EB851EB8 to +0x14C8.
             savour_delay_minutes: 0.03,
+            // RulesClass665650 initializes +16B8 before any AudioVisual read.
             gravity: 3,
             wind_direction: -1,
             veteran_sight: 0.0,
@@ -2228,6 +2211,7 @@ impl Default for GeneralRules {
             hover_acceleration: NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
             hover_brake: NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
             hover_dampen: NativeF64Bits::from_bits(0x3fe9_9999_9999_999a),
+            // RulesClass ctor666163/66616D initializes +7B8/+7BC.
             parachute_max_fall_rate: -3,
             no_parachute_max_fall_rate: -100,
             paradrop_radius: 1024,
@@ -2674,6 +2658,7 @@ pub struct BridgeRules {
     ///
     /// `[CombatDamage] DestroyableBridges=` exists in retail INI text but is
     /// not read by gamemd as the gameplay gate.
+    #[cfg(test)]
     pub destroyable_by_default: bool,
     /// SHP animation names to spawn when a bridge group is destroyed
     /// (e.g., TWLT026, TWLT036, TWLT050, TWLT070). Picked randomly per cell.
@@ -2681,6 +2666,7 @@ pub struct BridgeRules {
     /// Maximum metallic-debris voxels spawned per destroyed bridge cell.
     /// Parsed from `[General] BridgeVoxelMax=` in rules.ini (default 3).
     /// Consumed by the damage state machine in a later tier.
+    #[cfg(test)]
     pub voxel_max: u8,
     /// Sound ID played when a bridge segment is repaired by an
     /// Engineer entering a `BridgeRepairHut=yes` building.
@@ -2694,8 +2680,10 @@ impl Default for BridgeRules {
     fn default() -> Self {
         Self {
             strength: 1000,
+            #[cfg(test)]
             destroyable_by_default: true,
             explosions: Vec::new(),
+            #[cfg(test)]
             voxel_max: 3,
             repair_sound: None,
         }
@@ -2709,9 +2697,9 @@ impl BridgeRules {
         let strength = ini
             .section("CombatDamage")
             .map_or(1000, |section| section.read_int("BridgeStrength", 1000));
-        let destroyable_by_default = true;
         // Published from the ordered RulesClass reader by from_processed_rules.
         let explosions = Vec::new();
+        #[cfg(test)]
         let voxel_max = ini
             .section_or_empty("General")
             .read_int("BridgeVoxelMax", 3)
@@ -2722,8 +2710,10 @@ impl BridgeRules {
             .map(str::to_uppercase);
         Self {
             strength,
-            destroyable_by_default,
+            #[cfg(test)]
+            destroyable_by_default: true,
             explosions,
+            #[cfg(test)]
             voxel_max,
             repair_sound,
         }
@@ -2975,7 +2965,6 @@ impl GeneralRules {
         // into Rules+14C8; Process668F56 reaches it independently of General.
         let savour_delay_minutes =
             audio_visual.read_double("SavourDelay", defaults.savour_delay_minutes);
-        let detail = defaults.detail.read_pass(audio_visual);
         let pose_dir = audio_visual.read_int("PoseDir", defaults.pose_dir);
         let deploy_dir = audio_visual
             .read_int("DeployDir", defaults.deploy_dir >> 5)
@@ -2991,13 +2980,6 @@ impl GeneralRules {
         };
         let bomb_ticking_sound = audio_visual_sound("BombTickingSound");
         let bomb_attach_sound = audio_visual_sound("BombAttachSound");
-        // ReadAudioVisual too (`0x0066B877..0x0066B891`).
-        let mut color_indexes = crate::rules::color_add::ColorAddSelectors::default();
-        color_indexes.read_pass(audio_visual);
-        let force_shield_color = color_indexes.force_shield_color();
-        let laser_target_color = color_indexes.laser_target_color();
-        let iron_curtain_color = color_indexes.iron_curtain_color();
-        let berserk_color = color_indexes.berserk_color();
         let ally_reveal = audio_visual.read_bool("AllyReveal", defaults.ally_reveal);
         let psychic_reveal_activate_sound = audio_visual
             .read_name("PsychicRevealActivateSound", 0x80)
@@ -3016,14 +2998,9 @@ impl GeneralRules {
             .section_or_empty("MultiplayerDialogSettings")
             .read_bool("AlliesAllowed", defaults.allies_allowed);
         let attack_delay = ai.read_double("AttackDelay", defaults.attack_delay);
-        let patrol_scan_minutes = ai.read_double_bits("PatrolScan", defaults.patrol_scan_minutes);
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
             ai.read_int("BlockagePathDelay", defaults.blockage_path_delay_ticks);
-        let difficulty_rows = ["Easy", "Normal", "Difficult"].map(|name| {
-            ini.section(name)
-                .map_or_else(DifficultyRules::default, DifficultyRules::read_pass)
-        });
         // ReadAudioVisual6691E0 is independent of the ReadGeneral section
         // gate.66B673..66B754 reads all three class lights and stores signed
         // milliunits after the active x87 chop-toward-zero conversion.
@@ -3045,7 +3022,6 @@ impl GeneralRules {
             return Self {
                 message_delay_minutes,
                 savour_delay_minutes,
-                detail,
                 pose_dir,
                 deploy_dir,
                 iq_production,
@@ -3055,16 +3031,10 @@ impl GeneralRules {
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
-                patrol_scan_minutes,
                 attack_delay,
-                difficulty_rows,
                 blockage_path_delay_ticks,
                 bomb_ticking_sound,
                 bomb_attach_sound,
-                force_shield_color,
-                laser_target_color,
-                iron_curtain_color,
-                berserk_color,
                 ally_reveal,
                 allies_allowed,
                 paranoid,
@@ -3117,7 +3087,6 @@ impl GeneralRules {
         let condition_yellow_spark_prob: f64 =
             general.read_double("ConditionYellowSparkingProbability", 0.01);
         Self {
-            detail,
             pose_dir,
             deploy_dir,
             max_waypoint_path_length: general
@@ -3188,16 +3157,10 @@ impl GeneralRules {
                 "GuardAreaTargetingDelay",
                 defaults.guard_area_targeting_delay,
             ),
-            // Gravity lives in [AudioVisual] (stock value 6). Reading it from
-            // [General] silently fell back to the code default 3 — half stock
-            // gravity for spark ballistics and the hover bob amplitude.
-            gravity: audio_visual.read_int("Gravity", defaults.gravity),
-            wind_direction: general.read_int("WindDirection", defaults.wind_direction),
             veteran_sight: general.read_double("VeteranSight", defaults.veteran_sight),
             veteran_combat: general.read_double("VeteranCombat", defaults.veteran_combat),
             veteran_speed: general.read_double("VeteranSpeed", defaults.veteran_speed),
             veteran_rof: general.read_double("VeteranROF", defaults.veteran_rof),
-            difficulty_rows,
             game_speed_bias: general.read_double("GameSpeedBias", defaults.game_speed_bias),
             veteran_armor: general.read_double("VeteranArmor", 1.0),
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
@@ -3255,7 +3218,6 @@ impl GeneralRules {
                 defaults.dissolve_unfilled_team_delay,
             ),
             ai_safe_distance: general.read_int("AISafeDistance", defaults.ai_safe_distance),
-            patrol_scan_minutes,
             ai_trigger_success_weight_delta: general.read_double_bits(
                 "AITriggerSuccessWeightDelta",
                 defaults.ai_trigger_success_weight_delta,
@@ -3287,18 +3249,6 @@ impl GeneralRules {
             allies_allowed,
             paranoid,
             tunnel_speed: sim_from_f32(general.read_double("TunnelSpeed", 6.0) as f32),
-            missile_rot_var: general.read_double("MissileROTVar", defaults.missile_rot_var),
-            safety_altitude: general.read_int("MissileSafetyAltitude", defaults.safety_altitude),
-            line_trail_color_override: audio_visual.read_color_rgb(
-                "LineTrailColorOverride",
-                defaults.line_trail_color_override,
-                None,
-            ),
-            chrono_beam_color: audio_visual.read_color_rgb(
-                "ChronoBeamColor",
-                defaults.chrono_beam_color,
-                None,
-            ),
             flight_level: general.read_int("FlightLevel", 500),
             attacking_aircraft_sight_range: general.read_int(
                 "AttackingAircraftSightRange",
@@ -3314,11 +3264,6 @@ impl GeneralRules {
                 .read_double_bits("HoverAcceleration", defaults.hover_acceleration),
             hover_brake: general.read_double_bits("HoverBrake", defaults.hover_brake),
             hover_dampen: general.read_double_bits("HoverDampen", defaults.hover_dampen),
-            parachute_max_fall_rate: general.read_int("ParachuteMaxFallRate", -3),
-            no_parachute_max_fall_rate: general.read_int(
-                "NoParachuteMaxFallRate",
-                defaults.no_parachute_max_fall_rate,
-            ),
             paradrop_radius: general.read_int("ParadropRadius", 1024),
             parachute_shp: general.read_name("Parachute", 0x80).map(str::to_uppercase),
             amer_paradrop: ParadropList::read_counts(general, "AmerParaDropNum"),
@@ -3339,30 +3284,9 @@ impl GeneralRules {
                 .map(|tokens| tokens.into_iter().map(str::to_ascii_uppercase).collect())
                 .unwrap_or_else(|| defaults.pad_aircraft_types),
             separate_aircraft: general.read_bool("SeparateAircraft", defaults.separate_aircraft),
-            // `0x00671144` -> `0x0067BCE0`. The layered reader
-            // (`native_processing`) replaces this projection.
-            prism_type: read_building_identity(general, "PrismType", defaults.prism_type),
             // Only the ordered Process projection binds these references/reads.
             drop_zone_anim: defaults.drop_zone_anim,
             drop_zone_radius: defaults.drop_zone_radius,
-            // `0x0066F787..0x0066F7C9`, replaced by the layered reader too.
-            prerequisite_proc_alternate: read_building_identity(
-                general,
-                "PrerequisiteProcAlternate",
-                defaults.prerequisite_proc_alternate,
-            ),
-            prism_support: defaults.prism_support.read_pass(general),
-            building_types: GeneralBuildingTypes {
-                gdi_gate_one: read_building_identity(general, "GDIGateOne", None),
-                gdi_gate_two: read_building_identity(general, "GDIGateTwo", None),
-                nod_gate_one: read_building_identity(general, "NodGateOne", None),
-                nod_gate_two: read_building_identity(general, "NodGateTwo", None),
-                wall_tower: read_building_identity(general, "WallTower", None),
-                gdi_power_plant: read_building_identity(general, "GDIPowerPlant", None),
-                nod_regular_power: read_building_identity(general, "NodRegularPower", None),
-                nod_advanced_power: read_building_identity(general, "NodAdvancedPower", None),
-                third_power_plant: read_building_identity(general, "ThirdPowerPlant", None),
-            },
             tiberium_grows: general.read_bool("TiberiumGrows", true),
             tiberium_spreads: general.read_bool("TiberiumSpreads", true),
             growth_rate_minutes: general.read_double("GrowthRate", 2.0) as f32,
@@ -3425,10 +3349,6 @@ impl GeneralRules {
             elite_flash_timer: audio_visual.read_int("EliteFlashTimer", defaults.elite_flash_timer),
             idle_action_frequency: audio_visual
                 .read_double("IdleActionFrequency", defaults.idle_action_frequency),
-            force_shield_color,
-            laser_target_color,
-            iron_curtain_color,
-            berserk_color,
             airstrike_abort_sound: None,
             airstrike_attack_voice: None,
             building_garrisoned_sound: audio_visual
@@ -3573,7 +3493,6 @@ impl GeneralRules {
             time_warp_out_sound: None,
             time_warp_in_sound: None,
             cheer_sound: None,
-            maximum_cheer_rate: general.read_int("MaximumCheerRate", defaults.maximum_cheer_rate),
             impact_water_sound: audio_visual
                 .read_name("ImpactWaterSound", 0x80)
                 .map(str::to_owned),
@@ -3662,12 +3581,6 @@ impl GeneralRules {
                 .read_int_list("AIVirtualPurifiers")
                 .and_then(|values| values.get(..3)?.try_into().ok())
                 .unwrap_or([4, 2, 0]),
-            allied_survivor_divisor: general
-                .read_int("AlliedSurvivorDivisor", defaults.allied_survivor_divisor),
-            soviet_survivor_divisor: general
-                .read_int("SovietSurvivorDivisor", defaults.soviet_survivor_divisor),
-            third_survivor_divisor: general
-                .read_int("ThirdSurvivorDivisor", defaults.third_survivor_divisor),
             allied_crew: general.read_name("AlliedCrew", 0x80).map(str::to_owned),
             soviet_crew: general.read_name("SovietCrew", 0x80).map(str::to_owned),
             third_crew: general.read_name("ThirdCrew", 0x80).map(str::to_owned),
@@ -3758,9 +3671,6 @@ impl GeneralRules {
                 .read_int("LightningCellSpread", defaults.lightning_cell_spread),
             lightning_separation: general
                 .read_int("LightningSeparation", defaults.lightning_separation),
-            lightning_warhead: general.read_string("LightningWarhead", "", 128),
-            weather_con_bolt_explosion: general.read_string("WeatherConBoltExplosion", "", 128),
-            weapon_nullify_anim: general.read_string("WeaponNullifyAnim", "", 128),
             // The sole ordered AV reader supplies these after projection.
             ambient_change_rate_nonzero: defaults.ambient_change_rate_nonzero,
             ambient_change_interval_frames: defaults.ambient_change_interval_frames,
@@ -3795,6 +3705,35 @@ impl GeneralRules {
             metallic_debris: Vec::new(),
             weather_con_clouds: Vec::new(),
             weather_con_bolts: Vec::new(),
+            // Read only by the ordered Process owner (`native_processing`),
+            // which retains them across passes; the RuleSet projection
+            // publishes its values over these constructor placeholders.
+            detail: defaults.detail,
+            difficulty_rows: defaults.difficulty_rows,
+            patrol_scan_minutes: defaults.patrol_scan_minutes,
+            gravity: defaults.gravity,
+            wind_direction: defaults.wind_direction,
+            missile_rot_var: defaults.missile_rot_var,
+            safety_altitude: defaults.safety_altitude,
+            line_trail_color_override: defaults.line_trail_color_override,
+            chrono_beam_color: defaults.chrono_beam_color,
+            force_shield_color: defaults.force_shield_color,
+            laser_target_color: defaults.laser_target_color,
+            iron_curtain_color: defaults.iron_curtain_color,
+            berserk_color: defaults.berserk_color,
+            parachute_max_fall_rate: defaults.parachute_max_fall_rate,
+            no_parachute_max_fall_rate: defaults.no_parachute_max_fall_rate,
+            maximum_cheer_rate: defaults.maximum_cheer_rate,
+            allied_survivor_divisor: defaults.allied_survivor_divisor,
+            soviet_survivor_divisor: defaults.soviet_survivor_divisor,
+            third_survivor_divisor: defaults.third_survivor_divisor,
+            prism_type: defaults.prism_type,
+            prerequisite_proc_alternate: defaults.prerequisite_proc_alternate,
+            prism_support: defaults.prism_support,
+            building_types: defaults.building_types,
+            lightning_warhead: defaults.lightning_warhead,
+            weather_con_bolt_explosion: defaults.weather_con_bolt_explosion,
+            weapon_nullify_anim: defaults.weapon_nullify_anim,
         }
     }
 }
@@ -4140,9 +4079,9 @@ impl RuleSet {
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
         }
+        rules.mind_control.attack_line_frames = processed.mind_control_attack_line_frames();
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
-        rules.missile_spawn = processed.missile_spawn().clone();
         rules.general.metallic_debris = processed.metallic_debris().to_vec();
         rules.general.weather_con_clouds = processed.weather_con_clouds().to_vec();
         rules.general.weather_con_bolts = processed.weather_con_bolts().to_vec();
@@ -4282,6 +4221,15 @@ impl RuleSet {
                 object.radial_fire_segments = segments;
             }
         }
+        for (category, name, offset) in processed.lepton_mind_control_offset_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.lepton_mind_control_offset = offset;
+            }
+        }
         for (category, name, prerequisite, prerequisite_override) in processed.prerequisite_states()
         {
             if let Some(object) = rules
@@ -4375,7 +4323,6 @@ impl RuleSet {
                 art.apply_to(projectile);
             }
         }
-        rules.source_ini_hash = processed.content_hash();
         Ok(rules)
     }
 
@@ -5015,9 +4962,9 @@ impl RuleSet {
 
         let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(ini);
 
-        // [General] rocket blocks + [CombatDamage] missile warheads; the
-        // per-pass result replaces this in `from_processed_rules`.
-        let missile_spawn = crate::rules::missile_spawn::MissileSpawnRules::from_ini(ini);
+        // [General] rocket blocks + [CombatDamage] missile warheads, retained
+        // pass by pass by the ordered Process owner.
+        let missile_spawn = processed.missile_spawn().clone();
 
         let c4_delay = ini
             .section_or_empty("CombatDamage")
@@ -5197,10 +5144,8 @@ impl RuleSet {
             animation_sequence_by_handle: Vec::new(),
             unit_shp_read_states: BTreeMap::new(),
             mission_control,
-            // Single-source callers hash their one parsed INI. Production
-            // ordered-stack callers replace this with the boundary-sensitive
-            // RulesLayerStack hash in `from_processed_rules`.
-            source_ini_hash: ini.content_hash(),
+            // The boundary-sensitive RulesLayerStack hash.
+            source_ini_hash: processed.content_hash(),
         };
         rules.rebuild_animation_sequences(None);
         Ok(rules)
@@ -6730,12 +6675,6 @@ impl RuleSet {
         self.buildup_assets.insert_for_test(type_id, control);
     }
 
-    /// Consumer-visible SHP frame count for a particle image. Lookup is
-    /// case-insensitive and does not intern names.
-    pub fn effect_frame_count(&self, name: &str) -> Option<u16> {
-        self.effect_assets.effect_frame_count(name)
-    }
-
     /// Raw SHP header count used by `TerrainClass::AI` midpoint timing.
     pub fn terrain_spawner_frame_count(&self, name: &str) -> Option<u16> {
         self.terrain_spawner_assets.frame_count(name)
@@ -6807,16 +6746,19 @@ impl RuleSet {
     }
 
     /// Total number of game objects across all categories.
+    #[cfg(test)]
     pub fn object_count(&self) -> usize {
         self.object_list.len()
     }
 
     /// Total number of weapons.
+    #[cfg(test)]
     pub fn weapon_count(&self) -> usize {
         self.weapons.len()
     }
 
     /// Total number of warheads.
+    #[cfg(test)]
     pub fn warhead_count(&self) -> usize {
         self.warheads.len()
     }
@@ -8353,18 +8295,23 @@ MutateWarhead=MyMutate\n\
     #[test]
     fn parse_spark_gravity_preserves_signed_integer_storage() {
         assert_eq!(GeneralRules::default().gravity, 3);
+        let gravity = |text: &str| {
+            RuleSet::from_ini(&IniFile::from_str(text))
+                .unwrap()
+                .general
+                .gravity
+        };
         // Gravity lives in [AudioVisual] (stock rulesmd.ini), NOT [General].
-        let stock = GeneralRules::from_ini(&IniFile::from_str(
-            "[General]\nFlightLevel=500\n[AudioVisual]\nGravity=6\n",
-        ));
-        assert_eq!(stock.gravity, 6);
-        let signed = GeneralRules::from_ini(&IniFile::from_str(
-            "[General]\nFlightLevel=500\n[AudioVisual]\nGravity=-7\n",
-        ));
-        assert_eq!(signed.gravity, -7);
+        assert_eq!(
+            gravity("[General]\nFlightLevel=500\n[AudioVisual]\nGravity=6\n"),
+            6
+        );
+        assert_eq!(
+            gravity("[General]\nFlightLevel=500\n[AudioVisual]\nGravity=-7\n"),
+            -7
+        );
         // A [General] Gravity is ignored (the engine reads it in ReadAudioVisual).
-        let misplaced = GeneralRules::from_ini(&IniFile::from_str("[General]\nGravity=9\n"));
-        assert_eq!(misplaced.gravity, 3);
+        assert_eq!(gravity("[General]\nGravity=9\n"), 3);
     }
 
     #[test]
@@ -9360,11 +9307,13 @@ BarrelParticle=SmallGreySSys
 
     #[test]
     fn gsi_05_10_prism_type_is_parsed_as_a_building_identity() {
-        let ini = IniFile::from_str("[General]\nPrismType= atesla \n");
-        let general = GeneralRules::from_ini(&ini);
+        let ini = IniFile::from_str("[BuildingTypes]\n1=ATESLA\n[General]\nPrismType= atesla \n");
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(general.prism_type.as_deref(), Some("ATESLA"));
 
-        let absent = GeneralRules::from_ini(&IniFile::from_str("[General]\nFixtureOnly=1\n"));
+        let absent = RuleSet::from_ini(&IniFile::from_str("[General]\nFixtureOnly=1\n"))
+            .unwrap()
+            .general;
         assert!(absent.prism_type.is_none());
     }
 
@@ -9500,7 +9449,7 @@ ChuteSound=
 ParachuteMaxFallRate=-3
 ";
         let ini = IniFile::from_str(ini_str);
-        let general = GeneralRules::from_ini(&ini);
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(general.parachute_max_fall_rate, -3);
     }
 
@@ -9508,7 +9457,7 @@ ParachuteMaxFallRate=-3
     fn test_parachute_max_fall_rate_default_when_missing() {
         let ini_str = "[General]\nFixtureOnly=1\n";
         let ini = IniFile::from_str(ini_str);
-        let general = GeneralRules::from_ini(&ini);
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(
             general.parachute_max_fall_rate, -3,
             "default must be -3 per gamemd Rules+0x7B8"
@@ -9523,21 +9472,21 @@ ParachuteMaxFallRate=-3
 ParachuteMaxFallRate=-1
 ";
         let ini = IniFile::from_str(ini_str);
-        let general = GeneralRules::from_ini(&ini);
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(general.parachute_max_fall_rate, -1);
     }
 
     #[test]
     fn test_missile_rot_var_missing_key_keeps_native_constructor() {
         let ini = IniFile::from_str("[General]\nFixtureOnly=1\n");
-        let general = GeneralRules::from_ini(&ini);
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(general.missile_rot_var, 0.25);
     }
 
     #[test]
     fn test_missile_rot_var_stock_rules_value_parsed() {
         let ini = IniFile::from_str("[General]\nMissileROTVar=.25\n");
-        let general = GeneralRules::from_ini(&ini);
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         let diff = (general.missile_rot_var - 0.25).abs();
         assert!(diff < 0.001, "got {:?}", general.missile_rot_var);
     }
@@ -9545,7 +9494,7 @@ ParachuteMaxFallRate=-1
     #[test]
     fn test_missile_rot_var_parsed() {
         let ini = IniFile::from_str("[General]\nMissileROTVar=2.5\n");
-        let general = GeneralRules::from_ini(&ini);
+        let general = RuleSet::from_ini(&ini).unwrap().general;
         let diff = (general.missile_rot_var - 2.5).abs();
         assert!(diff < 0.001, "got {:?}", general.missile_rot_var);
     }

@@ -50,12 +50,10 @@ fn playfield_projection_grid(side: u16) -> TerrainGrid {
                 z: 0,
                 rx,
                 ry,
-                is_water: false,
                 variant: 0,
                 tint: [1.0; 3],
                 radar_left: [20, 80, 20],
                 radar_right: [40, 100, 40],
-                has_damaged_data: false,
             });
         }
     }

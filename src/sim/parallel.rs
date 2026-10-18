@@ -27,6 +27,41 @@ mod pooled {
         items.par_iter().map(&work).collect()
     }
 
+    /// [`map`] that starts the items in `order`, a permutation of their indices,
+    /// each on the next free worker, with the results in item order. Starting
+    /// the costliest items first keeps the slowest from running alone at the end.
+    pub(crate) fn map_in_order<T: Sync, R: Send>(
+        items: &[T],
+        order: &[usize],
+        work: impl Fn(&T) -> R + Sync,
+    ) -> Vec<R> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        debug_assert_eq!(order.len(), items.len(), "the order lists every item");
+        let next = AtomicUsize::new(0);
+        // A puller per worker takes the next item in `order` until none is
+        // left; one a busy worker never starts finds none left.
+        let pullers = rayon::current_num_threads().min(order.len());
+        let done: Vec<Vec<(usize, R)>> = (0..pullers)
+            .into_par_iter()
+            .with_max_len(1)
+            .map(|_| {
+                let mut done = Vec::new();
+                while let Some(&index) = order.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    done.push((index, work(&items[index])));
+                }
+                done
+            })
+            .collect();
+        let mut results: Vec<Option<R>> = items.iter().map(|_| None).collect();
+        for (index, result) in done.into_iter().flatten() {
+            results[index] = Some(result);
+        }
+        results
+            .into_iter()
+            .map(|result| result.expect("the order lists every item"))
+            .collect()
+    }
+
     /// [`map`] with scratch: each worker takes its own clone of `init` and keeps
     /// it across the items it takes, so `work` may cache in it answers that do
     /// not depend on the item.
@@ -87,6 +122,15 @@ mod sequential {
         items.iter().map(work).collect()
     }
 
+    pub(crate) fn map_in_order<T: Sync, R: Send>(
+        items: &[T],
+        order: &[usize],
+        work: impl Fn(&T) -> R + Sync,
+    ) -> Vec<R> {
+        debug_assert_eq!(order.len(), items.len(), "the order lists every item");
+        items.iter().map(work).collect()
+    }
+
     pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
         items: &[T],
         init: S,
@@ -144,6 +188,11 @@ mod tests {
         );
         assert!(super::any_index(1000, |index| index == 999));
         assert!(!super::any_index(1000, |index| index >= 1000));
+        let backwards: Vec<usize> = (0..1000).rev().collect();
+        assert_eq!(
+            super::map_in_order(&items, &backwards, |item| item * item),
+            squares
+        );
     }
 
     #[test]

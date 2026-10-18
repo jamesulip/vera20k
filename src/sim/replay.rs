@@ -37,13 +37,6 @@ pub const NATIVE_REPLAY_SCENARIO_NAME_LEN: usize = 0x104;
 /// Raw retail options block stored at the end of the native header.
 pub const NATIVE_REPLAY_OPTIONS_LEN: usize = 0xb8;
 
-/// Legacy recorder bit. No active retail YR caller sets it.
-pub const REPLAY_FLAG_RECORD: u32 = 0x01;
-/// Playback bit set when session preparation opens an external `RECORD.BIN`.
-pub const REPLAY_FLAG_PLAYBACK: u32 = 0x02;
-/// Availability bit set by active retail YR's `-ATTRACT` command-line path.
-pub const REPLAY_FLAG_AVAILABLE: u32 = 0x04;
-
 /// Malformed native recording data.
 #[derive(Debug, Error)]
 pub enum NativeReplayError {
@@ -243,7 +236,7 @@ impl NativeReplayFrame {
     }
 }
 
-/// Eager legacy-format document codec used by tooling and fixtures.
+/// Eager legacy-format document codec used by fixtures.
 ///
 /// Active retail YR cannot enter the corresponding recording path, and its
 /// playback path is streaming and tolerant of presentation short reads. Use
@@ -255,13 +248,6 @@ pub struct NativeReplay {
 }
 
 impl NativeReplay {
-    pub fn new(header: NativeReplayHeader) -> Self {
-        Self {
-            header,
-            frames: Vec::new(),
-        }
-    }
-
     pub fn encode(&self) -> std::result::Result<Vec<u8>, NativeReplayError> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.header.encode());
@@ -303,12 +289,6 @@ impl NativeReplay {
             });
         }
         Ok(Self { header, frames })
-    }
-
-    pub fn save(&self, path: &Path) -> Result<()> {
-        let bytes = self.encode().context("Failed to encode native replay")?;
-        std::fs::write(path, bytes)
-            .with_context(|| format!("Failed to write native replay: {}", path.display()))
     }
 
     /// Initialize playback through the normal scenario-loading owner.
@@ -755,6 +735,7 @@ impl ReplayLog {
             .with_context(|| format!("Failed to write diagnostic log: {}", path.display()))
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn load(path: &Path) -> Result<Self> {
         let bytes = std::fs::read(path)
             .with_context(|| format!("Failed to read diagnostic log: {}", path.display()))?;
@@ -763,8 +744,10 @@ impl ReplayLog {
 }
 
 /// Headless runner for the Rust-only deterministic diagnostic log.
+#[cfg(any(test, feature = "test-support"))]
 pub struct ReplayRunner;
 
+#[cfg(any(test, feature = "test-support"))]
 impl ReplayRunner {
     /// Re-run diagnostic-log ticks through the bound runtime (F09): every
     /// tick runs the exact production frame transaction, so rules, heights,
@@ -772,7 +755,6 @@ impl ReplayRunner {
     /// resources and navigation re-snapshots per frame just as a recorded
     /// app session did - nothing is caller-substitutable and a mid-match
     /// path-grid change replays faithfully.
-    #[cfg(any(test, feature = "test-support"))]
     pub fn run_runtime(
         runtime: &mut crate::sim::runtime::SimRuntime,
         replay: &ReplayLog,
@@ -818,7 +800,6 @@ impl ReplayRunner {
     /// Fixture-only replay runner (F09): re-run diagnostic-log ticks with
     /// explicitly supplied resources. Production replay execution goes
     /// through `run_runtime`, whose resources are bound in the `SimRuntime`.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -832,7 +813,6 @@ impl ReplayRunner {
     /// Fixture-only variant with the static overlay type registry used by the
     /// recorded map. Overlay-backed simulation authority (including miner
     /// resource queries) must see the same registry on record and replay.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture_with_overlay_registry(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -856,7 +836,6 @@ impl ReplayRunner {
     /// uses, with caller-owned static map trigger definitions. Diagnostic
     /// logs own commands and hashes. Production replay execution is
     /// `run_runtime`.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture_master_frame(
         sim: &mut Simulation,
         replay: &ReplayLog,

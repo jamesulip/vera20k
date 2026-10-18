@@ -334,7 +334,7 @@ fn flood_build(ctx: &mut IslandCtx<'_>, seed: (i32, i32), id: i32) -> Option<Rmg
             .native_cells()
             .filter(|&(x, y)| ctx.scratch.get(x, y).region == id)
             .count() as i32;
-        return Some(RmgRegion::rebuilt(id, level, waterish, seed, count));
+        return Some(RmgRegion::rebuilt(id, level, waterish, count));
     }
 
     if id == 0 {
@@ -381,7 +381,7 @@ fn flood_build(ctx: &mut IslandCtx<'_>, seed: (i32, i32), id: i32) -> Option<Rmg
             .native_cells()
             .filter(|&(x, y)| ctx.scratch.get(x, y).region == id)
             .count() as i32;
-        return Some(RmgRegion::rebuilt(id, level, waterish, seed, count));
+        return Some(RmgRegion::rebuilt(id, level, waterish, count));
     };
     let host_region = ctx.scratch.get(hx, hy).region;
     let host_level = ctx.grid.cell_native(hx, hy).level;

@@ -14,8 +14,8 @@
 //! - `BuildingClass::How_Many_Survivors @ 0x00451330`, the building crew pick
 //!   `0x0044EB10` and `TechnoClass::GetCrew @ 0x00707D20`.
 //!
-//! Placement is `CellClass::PlaceInfantryInCell @ 0x00481180`
-//! ([`bump_crush::place_infantry_in_cell`]); the exit is
+//! Placement is `CellClass::PlaceInfantryInCell @ 0x00481180` on the cell's
+//! ground with the live Gate (`Simulation::place_infantry_in_ground_cell`); the exit is
 //! `InfantryClass::Scatter(&EmptyCoord, 1, 0)` through the shared forced
 //! Scatter arm. Every draw is on the Scenario stream. Aircraft never ask for
 //! a crew: `Pilot=` has no gameplay reader and no aircraft caller reaches the
@@ -130,8 +130,6 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::movement::bump_crush;
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::RawCellKey;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
@@ -559,18 +557,14 @@ impl Simulation {
         self.with_object_placement_scope(|sim| {
             if infantry {
                 let cell = cell.map_or(RawCellKey::Dummy, |(x, y)| RawCellKey::Real(x, y));
-                let _overwritten = bump_crush::place_infantry_in_native_cell(
-                    &sim.substrate.raw_cell_occupation,
+                let _overwritten = sim.place_infantry_in_ground_key(
+                    rules,
                     cell,
-                    MovementLayer::Ground,
                     crate::sim::components::DriveCoord {
                         x: SURVIVOR_REQUEST_X,
                         y: SURVIVOR_REQUEST_Y,
                         z: 0,
                     },
-                    false,
-                    false,
-                    &mut sim.scenario_rng,
                 );
             }
             let Some(building) = sim.substrate.entities.get(building_id) else {
@@ -1041,14 +1035,16 @@ impl Simulation {
             } => {
                 debug_assert!(infantry, "only an infantryman places in a cell");
                 if caller_places_first {
-                    let Some(spot) = bump_crush::place_infantry_in_cell(
-                        &self.substrate.raw_cell_occupation,
-                        cell.0,
-                        cell.1,
-                        MovementLayer::Ground,
-                        request.0,
-                        request.1,
-                        &mut self.scenario_rng,
+                    // SpawnSurvivors (`0x00443182`) and Mission_Selling
+                    // (`0x0044A6ED`): GetCellAt, then PlaceInfantryInCell
+                    // (0, 0, 0) on that cell's ground.
+                    let Some(spot) = self.place_infantry_in_ground_cell(
+                        rules,
+                        crate::sim::components::DriveCoord {
+                            x: (i32::from(cell.0) << 8).wrapping_add(request.0.to_num::<i32>()),
+                            y: (i32::from(cell.1) << 8).wrapping_add(request.1.to_num::<i32>()),
+                            z: 0,
+                        },
                     ) else {
                         return false;
                     };

@@ -16,7 +16,6 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
              SoloCrateMoney=5000\n[O0]\nCrate=yes\nCrateTrigger=yes\n\
              [Powerups]\nMoney=20,<none>,yes,2000\n",
     );
-    sim.playfield_size_height = Some(16);
     sim.session.game_mode_nonzero = false;
     sim.session.game_options.crates = false;
     let owner = sim.interner.intern("Americans");
@@ -723,7 +722,6 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.session.initialize_campaign_startup(1, 7).unwrap();
     sim.session.game_options.crates = false;
     sim.session.binary_frame = 0;
-    sim.playfield_size_height = Some(16);
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,

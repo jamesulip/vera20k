@@ -83,6 +83,7 @@ use crate::sim::world::Simulation;
 
 use super::team_ai::member_is_live_joined;
 use super::{TeamScriptAction, TeamScriptRefusal, TeamScriptState, TeamTarget, script_action_at};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 
 impl TeamScriptState {
     /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
@@ -746,12 +747,18 @@ impl Simulation {
                         .expect("Team leader has its resolved TechnoType")
                         .speed_type;
                     cell = self
-                        .find_plain_passable_cell(
+                        .nearby_passable_cell(
                             (i32::from(cell.0), i32::from(cell.1)),
-                            speed,
-                            None,
-                            crate::rules::locomotor_type::MovementZone::Normal,
-                            (1, 1),
+                            NearbyArgs::plain(
+                                PassabilityArgs {
+                                    speed_type: speed,
+                                    required_zone_id: None,
+                                    movement_zone:
+                                        crate::rules::locomotor_type::MovementZone::Normal,
+                                    bridge_aware_zone: false,
+                                },
+                                NearbyFootprint::SINGLE,
+                            ),
                         )
                         .map_or((0, 0), |(x, y)| (x as i16, y as i16));
                 }
@@ -1387,21 +1394,6 @@ impl Simulation {
         Some(leader)
     }
 
-    /// `HouseClass::Base_Center @ 0x0050DF30`: the centre of the house's base
-    /// cell (`HouseState::base_origin`), or `(0, 0)` without one.
-    fn house_base_center_xy(&self, owner: InternedId) -> [i32; 2] {
-        let origin = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)
-            .map_or((0, 0), |house| house.base_origin());
-        if origin == (0, 0) {
-            [0, 0]
-        } else {
-            [
-                i32::from(origin.0) * 256 + 128,
-                i32::from(origin.1) * 256 + 128,
-            ]
-        }
-    }
-
     /// Script action 54 (`0x006EFA10`), regroup at base: on its first frame
     /// the team's mission target becomes the cell `AISafeDistance=` cells
     /// from the leader's base centre towards its enemy's (a facing drawn
@@ -1427,8 +1419,17 @@ impl Simulation {
                 .map(|object| object.speed_type);
             let enemy = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)
                 .and_then(|house| house.enemy_house);
-            let own = self.house_base_center_xy(owner);
-            let enemy = enemy.map(|enemy| self.house_base_center_xy(enemy));
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            // 6EFAAE/6EFAF7: preserve the shared Map/Dummy query order.
+            let [own_x, own_y, _] = self.house_base_coordinate(owner, cells.as_ref());
+            let own = [own_x, own_y];
+            let enemy = enemy.map(|enemy| {
+                let [x, y, _] = self.house_base_coordinate(enemy, cells.as_ref());
+                [x, y]
+            });
             let seed = regroup_seed_cell(own, enemy, rules.general.ai_safe_distance, || {
                 self.scenario_rng.next_range_i32_inclusive(0, 255)
             });
@@ -1462,9 +1463,20 @@ impl Simulation {
             let owner = entity.owner();
             let enemy = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)?
                 .enemy_house?;
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            // 6EF7C0 precedes 6EF812; an empty enemy base returns before
+            // querying the own base, including its Map/Dummy side effects.
+            let enemy = self.house_base_coordinate(enemy, cells.as_ref());
+            if enemy == [0, 0, 0] {
+                return None;
+            }
+            let own = self.house_base_coordinate(owner, cells.as_ref());
             let seed = gather_seed_cell(
-                self.house_base_center_xy(owner),
-                self.house_base_center_xy(enemy),
+                [own[0], own[1]],
+                [enemy[0], enemy[1]],
                 crate::sim::movement::ground_pose::position_world_xy(&entity.position),
                 rules.general.ai_safe_distance,
             )?;
@@ -1498,12 +1510,17 @@ impl Simulation {
     ) {
         let cell = speed_type
             .and_then(|speed_type| {
-                self.find_plain_passable_cell(
+                self.nearby_passable_cell(
                     seed,
-                    speed_type,
-                    None,
-                    crate::rules::locomotor_type::MovementZone::Normal,
-                    (3, 3),
+                    NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type,
+                            required_zone_id: None,
+                            movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+                            bridge_aware_zone: false,
+                        },
+                        NearbyFootprint::new(3, 3),
+                    ),
                 )
             })
             .unwrap_or((0, 0));
@@ -1615,70 +1632,19 @@ impl Simulation {
             object.movement_zone,
             leader.on_bridge(),
         )?;
-        self.find_plain_passable_cell(
+        self.nearby_passable_cell(
             seed,
-            object.speed_type,
-            Some(zone),
-            object.movement_zone,
-            (1, 1),
-        )
-        .filter(|&cell| cell != (0, 0))
-    }
-
-    /// `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20` as both team
-    /// actions and `HouseClass::AI_GroundRallyPoint` (`0x00509D61..
-    /// 0x00509D9A`) call it: no bridge-aware zone, overlay, height, obstacle
-    /// or occupancy test, bridges allowed, no target cell (the frame-counter
-    /// pick), no quadrant skip.
-    pub(crate) fn find_plain_passable_cell(
-        &self,
-        seed: (i32, i32),
-        speed_type: crate::rules::locomotor_type::SpeedType,
-        zone: Option<u32>,
-        movement_zone: crate::rules::locomotor_type::MovementZone,
-        footprint: (i32, i32),
-    ) -> Option<(u16, u16)> {
-        use crate::sim::find_nearby_cell::{
-            NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
-            find_nearby_passable_cell_with_options, map_owned_radius_cap,
-        };
-        let terrain = self.resolved_terrain.as_ref()?;
-        let size = self
-            .playfield_bounds
-            .zip(self.playfield_size_height)
-            .map(|(bounds, height)| (bounds.base, height))
-            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())?;
-        let grid = self.path_grid_snapshot();
-        find_nearby_passable_cell_with_options(
-            seed,
-            &NearbyQuery {
-                native_cells: None,
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
-                    speed_type,
-                    required_zone_id: zone,
-                    movement_zone,
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type: object.speed_type,
+                    required_zone_id: Some(zone),
+                    movement_zone: object.movement_zone,
                     bridge_aware_zone: false,
                 },
-                footprint: NearbyFootprint::new(footprint.0, footprint.1),
-                allow_bridge_cells: true,
-                check_height: false,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(size.0, size.1),
-                target_cell: None,
-                path_grid: grid.as_deref(),
-                resolved_terrain: Some(terrain),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
-            },
-            NearbySearchOptions {
-                reject_any_overlay: false,
-            },
-            self.session.binary_frame,
+                NearbyFootprint::SINGLE,
+            ),
         )
+        .filter(|&cell| cell != (0, 0))
     }
 
     /// `Assign_Mission_Target @ 0x006E9050`: a changed mission target

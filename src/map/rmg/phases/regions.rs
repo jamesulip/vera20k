@@ -26,8 +26,6 @@ pub struct RmgRegion {
     pub level: u8,
     /// Class flag: seed was water-ish or green (drives the expansion loop).
     pub active: bool,
-    pub seed: (i16, i16),
-    pub done: bool,
     pub cell_count: i32,
     /// Per-region cell list; populated by the starts phase, not here.
     pub cells: Vec<(i16, i16)>,
@@ -51,13 +49,11 @@ pub struct Regions {
 impl RmgRegion {
     /// A region produced by the inland/mountainous rebuild, which derives all
     /// of its fields from the flood rather than from the seed scan.
-    pub fn rebuilt(id: i32, level: u8, active: bool, seed: (i32, i32), cell_count: i32) -> Self {
+    pub fn rebuilt(id: i32, level: u8, active: bool, cell_count: i32) -> Self {
         Self {
             id,
             level,
             active,
-            seed: (seed.0 as i16, seed.1 as i16),
-            done: false,
             cell_count,
             cells: Vec::new(),
             start_quota: 0,
@@ -119,7 +115,7 @@ pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
         water_propagate(ctx, id);
     }
 
-    // Fallback: every remaining unassigned cell seeds a region (done = false).
+    // Fallback: every remaining unassigned cell seeds a region.
     for index in 0..width * width {
         let record = ctx.scratch.cells()[index];
         let coord = (i32::from(record.x), i32::from(record.y));
@@ -198,8 +194,6 @@ fn flood_fill(ctx: &mut RegionCtx<'_>, regions: &mut Regions, seed: (i32, i32)) 
         id,
         level: seed_level,
         active: seed_class,
-        seed: (seed.0 as i16, seed.1 as i16),
-        done: false,
         cell_count: 0,
         cells: Vec::new(),
         start_quota: 0,

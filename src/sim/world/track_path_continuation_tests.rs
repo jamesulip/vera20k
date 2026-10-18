@@ -552,9 +552,6 @@ fn depot_release_and_pad_entry_route_through_find_path() {
             "[CABHUT]\nFoundation=1x1\n[DEPOT]\nFoundation=3x3\n",
         ),
     );
-    // This synthetic fixture supplies normalized LocalSize and a 16x16
-    // Map Size; native exit search568300 also needs its retained height.
-    sim.playfield_size_height = Some(16);
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 5000, 0);
     house.player_control = true;
@@ -671,7 +668,6 @@ fn teleporter_bound_for_its_refinery(
             "[CABHUT]\nFoundation=1x1\n[REFN]\nFoundation=3x3\n",
         ),
     );
-    sim.playfield_size_height = Some(16);
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 5000, 0);
     house.player_control = true;
@@ -886,9 +882,6 @@ fn a_teleporter_is_repaired_at_a_depot_and_drives_off() {
             "[CABHUT]\nFoundation=1x1\n[DEPOT]\nFoundation=3x3\n",
         ),
     );
-    // This synthetic fixture supplies normalized LocalSize and a 16x16
-    // Map Size; native exit search568300 also needs its retained height.
-    sim.playfield_size_height = Some(16);
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 5000, 0);
     house.player_control = true;
@@ -968,9 +961,6 @@ fn three_depot_waiters_are_repaired_in_turn_without_pad_intrusion() {
                 "[CABHUT]\nFoundation=1x1\n[DEPOT]\nFoundation=3x3\n",
             ),
         );
-        // This synthetic fixture supplies normalized LocalSize and a 16x16
-        // Map Size; native exit search568300 also needs its retained height.
-        sim.playfield_size_height = Some(16);
         let owner = sim.interner.intern("Americans");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 50_000, 0);
         house.player_control = true;

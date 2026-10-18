@@ -580,7 +580,7 @@ fn the_ground_rally_point_matches_native() {
         // Find_Nearby_Passable_Cell(seed, SpeedType 0 Foot, zone -1,
         // MovementZone 0 Normal, not bridge-aware, 5x5, no overlay, height or
         // occupancy test, bridges allowed, close to the empty cell, no
-        // quadrant skip, not buildable): `find_plain_passable_cell`'s fixed
+        // quadrant skip, not buildable): `NearbyArgs::plain`'s fixed
         // options and `ground_rally_point`'s arguments.
         assert_eq!(find[2], json!([0, -1, 0, 0, 5, 5, 0, 0, 0, 1]), "{row}");
         assert_eq!(find[3], json!([0, 0]), "{row}");

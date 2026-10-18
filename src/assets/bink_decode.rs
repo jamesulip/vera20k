@@ -294,7 +294,6 @@ pub struct BinkDecoder {
     width: u32,
     height: u32,
     has_alpha: bool,
-    color_range: ColorRange,
 
     vlc_tables: Vec<VlcTable>,
     col_high: [HuffmanTree; 16],
@@ -349,7 +348,6 @@ impl BinkDecoder {
             width: header.width,
             height: header.height,
             has_alpha: header.has_alpha(),
-            color_range,
             vlc_tables,
             col_high: std::array::from_fn(|_| HuffmanTree::default()),
             col_lastval: 0,
@@ -367,9 +365,6 @@ impl BinkDecoder {
     }
     pub fn height(&self) -> u32 {
         self.height
-    }
-    pub fn color_range(&self) -> ColorRange {
-        self.color_range
     }
 
     /// Reset ping-pong state; caller must call this after seeking.
@@ -1751,7 +1746,6 @@ mod tests {
             version: BinkVersion::BikI,
             file_size: 1000,
             num_frames: 1,
-            largest_frame: 100,
             width: 320,
             height: 240,
             fps_num: 30,
@@ -1764,12 +1758,12 @@ mod tests {
         let d = BinkDecoder::new(&h).unwrap();
         assert_eq!(d.width, 320);
         assert_eq!(d.height, 240);
-        assert_eq!(d.color_range, ColorRange::Mpeg);
+        assert_eq!(d.cur.color_range, ColorRange::Mpeg);
         assert!(d.cur.y.len() >= 320 * 240);
         assert!(d.cur.u.len() >= 160 * 120);
         h.version = BinkVersion::BikK;
         let dk = BinkDecoder::new(&h).unwrap();
-        assert_eq!(dk.color_range, ColorRange::Jpeg);
+        assert_eq!(dk.cur.color_range, ColorRange::Jpeg);
     }
 
     #[test]
@@ -1778,7 +1772,6 @@ mod tests {
             version: BinkVersion::BikI,
             file_size: 1000,
             num_frames: 1,
-            largest_frame: 100,
             width: 320,
             height: 240,
             fps_num: 30,
@@ -1812,7 +1805,6 @@ mod tests {
             version: BinkVersion::BikK,
             file_size: 1000,
             num_frames: 1,
-            largest_frame: 100,
             width: 8,
             height: 8,
             fps_num: 30,
@@ -1837,7 +1829,6 @@ mod tests {
             version: BinkVersion::BikI,
             file_size: 1000,
             num_frames: 1,
-            largest_frame: 100,
             width: 8,
             height: 8,
             fps_num: 30,

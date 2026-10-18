@@ -200,7 +200,6 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::UnitPromoted {
                 owner,
                 sound_id,
-                elite: _,
                 rx,
                 ry,
             } => {
@@ -560,12 +559,7 @@ pub(super) fn dispatch_sim_sound_events(
                     source: Some(sound_source_at_cell(rx, ry)),
                 }
             }
-            SimSoundEvent::BridgeRepaired {
-                rx,
-                ry,
-                owner: _,
-                radar,
-            } => {
+            SimSoundEvent::BridgeRepaired { rx, ry, radar } => {
                 // Spatial SFX gated on rules.bridge_rules.repair_sound
                 // being set (the original game gates on
                 // `RulesClass+0x248 != -1`).
@@ -1470,7 +1464,6 @@ mod tests {
         let promotion = |owner| SimSoundEvent::UnitPromoted {
             owner,
             sound_id: Some(sound),
-            elite: true,
             rx: 5,
             ry: 7,
         };

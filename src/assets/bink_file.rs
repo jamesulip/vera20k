@@ -57,7 +57,6 @@ pub struct BinkHeader {
     /// Real file size in bytes. (On-disk field is `file_size - 8`; we store the real size.)
     pub file_size: u64,
     pub num_frames: u32,
-    pub largest_frame: u32,
     pub width: u32,
     pub height: u32,
     pub fps_num: u32,
@@ -93,11 +92,13 @@ impl BinkHeader {
 pub struct AudioTrack {
     pub sample_rate: u16,
     pub flags: u16,
+    #[cfg(test)]
     pub track_id: u32,
 }
 
 impl AudioTrack {
     /// Bit 0x4000: 16-bit output preferred.
+    #[cfg(test)]
     #[inline]
     pub fn is_16bit(self) -> bool {
         self.flags & 0x4000 != 0
@@ -196,7 +197,6 @@ pub(crate) fn parse_fixed_header(data: &[u8]) -> Result<(BinkHeader, usize), Ass
         version,
         file_size,
         num_frames,
-        largest_frame,
         width,
         height,
         fps_num,
@@ -243,11 +243,13 @@ pub(crate) fn parse_audio_tracks(
 
     let mut tracks = Vec::with_capacity(n);
     for &(sample_rate, flags) in &tracks_partial {
+        #[cfg(test)]
         let track_id = read_u32_le(data, off);
         off += 4;
         tracks.push(AudioTrack {
             sample_rate,
             flags,
+            #[cfg(test)]
             track_id,
         });
     }
@@ -320,9 +322,10 @@ pub struct AudioPacket<'a> {
     pub track_index: usize,
     /// Decompressed sample count (first 4 bytes of the packet payload, little-endian).
     /// 0 if the packet is shorter than 4 bytes.
+    #[cfg(test)]
     pub sample_count: u32,
-    /// Audio packet payload bytes. The 4-byte decompressed-sample-count header
-    /// has already been stripped; use `sample_count` for that value.
+    /// Audio packet payload bytes, starting with the 4-byte little-endian
+    /// decompressed sample count that the audio decoder skips.
     pub bytes: &'a [u8],
 }
 
@@ -416,6 +419,7 @@ impl BinkFile {
                 });
             }
             let bytes = &self.data[packet_start..packet_end];
+            #[cfg(test)]
             let sample_count = if bytes.len() >= 4 {
                 u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
             } else {
@@ -423,6 +427,7 @@ impl BinkFile {
             };
             out.push(AudioPacket {
                 track_index,
+                #[cfg(test)]
                 sample_count,
                 bytes,
             });

@@ -20,13 +20,9 @@ fn vehicle_speed_type_uses_crusher_default_and_explicit_override() {
         ("SpeedType=Float", SpeedType::Float),
         ("SpeedType=invalid", SpeedType::Invalid),
     ] {
-        let ini = IniFile::from_str(&format!("[CAR]\n{body}\n"));
-        let object = ObjectType::from_ini_section(
-            "CAR",
-            ini.section("CAR").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(object.speed_type, expected, "{body}");
+        let ini = IniFile::from_str(&format!("[VehicleTypes]\n0=CAR\n[CAR]\n{body}\n"));
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        assert_eq!(rules.object("CAR").unwrap().speed_type, expected, "{body}");
     }
 }
 

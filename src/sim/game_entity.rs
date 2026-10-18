@@ -97,13 +97,9 @@ pub struct StructureUpgradeLink {
 
 impl StructureUpgradeLink {
     /// The host building.
+    #[cfg(test)]
     pub fn parent_stable_id(&self) -> u64 {
         self.parent_stable_id
-    }
-
-    /// The host's upgrade slot.
-    pub fn slot(&self) -> u8 {
-        self.slot
     }
 
     /// A fixture's link.
@@ -484,6 +480,9 @@ pub struct GameEntity {
     /// the Grand_Opening guard. `sim::building_art` owns it.
     #[serde(default)]
     pub building_art: crate::sim::building_art::BuildingArt,
+    /// Independent Building+660, owned by sim::building_power.
+    #[serde(default)]
+    pub(crate) building_online: crate::sim::building_power::BuildingOnline,
     /// Building+66C charger pointers and +661 weapon latch, owned by
     /// `sim::tesla_charging` independently of House power accounting.
     #[serde(default)]
@@ -1482,6 +1481,7 @@ impl GameEntity {
             building_sale: None,
             ai_placement_timer: Default::default(),
             building_art: Default::default(),
+            building_online: Default::default(),
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),
@@ -1729,6 +1729,7 @@ impl GameEntity {
     /// First-null slot insert: idempotent, and full slots deny without evicting
     /// (the receiver dock idiom). Slot order is hash-relevant and deterministic.
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
+    #[cfg(test)]
     pub fn mark_live_contact_with(&mut self, other_stable_id: u64) {
         self.radio_contacts.insert(other_stable_id);
     }

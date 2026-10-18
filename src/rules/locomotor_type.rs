@@ -51,6 +51,7 @@ pub enum LocomotorKind {
 }
 
 impl LocomotorKind {
+    #[cfg(test)]
     pub const ALL: [Self; 8] = [
         Self::Drive,
         Self::Hover,
@@ -62,7 +63,7 @@ impl LocomotorKind {
         Self::Rocket,
     ];
 
-    /// Row of this kind in [`Self::ALL`] and [`INSTALLED_CLSID_KIND_TABLE`].
+    /// Row of this kind in `Self::ALL` and [`INSTALLED_CLSID_KIND_TABLE`].
     pub const fn table_index(self) -> usize {
         self as usize
     }
@@ -75,7 +76,7 @@ impl LocomotorKind {
 
 /// The eight CLSIDs selected by uncommented `Locomotor=` keys in retail YR, in
 /// the braces-and-upper-case spelling the retail INI uses, in
-/// [`LocomotorKind::ALL`] order.
+/// `LocomotorKind::ALL` order.
 ///
 /// The dormant Tiberian Sun CLSIDs (Mech, Tunnel, DropPod) are deliberately
 /// absent: an INI naming one falls back to the constructor seed like any other
@@ -370,13 +371,6 @@ impl MovementZone {
         } else {
             Some(self as usize)
         }
-    }
-
-    /// Water movers bypass the land PathGrid and use the passability matrix
-    /// directly. Single source of truth for pathfinding, movement stepping,
-    /// target redirect, and wake effects.
-    pub fn is_water_mover(&self) -> bool {
-        matches!(self, Self::Water | Self::WaterBeach)
     }
 
     /// All MovementZone variants that need computed zone grids.

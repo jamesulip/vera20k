@@ -23,9 +23,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::{native_xy_distance, native_xyz_distance};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::DriveCoord;
-use crate::sim::find_nearby_cell::{
-    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
-};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::mission::MissionId;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -1052,11 +1050,7 @@ impl Simulation {
             .zone_grid
             .as_ref()
             .ok_or("Find_Path FNPC requires zone topology")?;
-        let size = self
-            .playfield_bounds
-            .zip(self.playfield_size_height)
-            .map(|(bounds, height)| (bounds.base, height))
-            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())
+        self.map_size_diamond()
             .ok_or("Find_Path FNPC requires original Map Size")?;
         let current = coord_cell(ground_pose::position_world_coord(&actor.position));
         let current = (i32::from(current.0), i32::from(current.1));
@@ -1066,37 +1060,25 @@ impl Simulation {
             zone,
             actor.on_bridge(),
         );
-        let cells = NativeCellQuery::canonical(terrain);
-        let grid = self.path_grid_snapshot();
-        Ok(find_nearby_passable_cell(
-            (i32::from(target.0), i32::from(target.1)),
-            &NearbyQuery {
-                native_cells: Some(&cells),
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
-                    speed_type: object.speed_type,
-                    required_zone_id,
-                    movement_zone: zone,
-                    bridge_aware_zone: actor.on_bridge(),
+        Ok(self
+            .nearby_passable_cell(
+                (i32::from(target.0), i32::from(target.1)),
+                NearbyArgs {
+                    check_height: true,
+                    target_cell: Some(current),
+                    ..NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: object.speed_type,
+                            required_zone_id,
+                            movement_zone: zone,
+                            bridge_aware_zone: actor.on_bridge(),
+                        },
+                        NearbyFootprint::SINGLE,
+                    )
                 },
-                footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: true,
-                check_height: true,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(size.0, size.1),
-                target_cell: Some(current),
-                path_grid: grid.as_deref(),
-                resolved_terrain: Some(terrain),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
-            },
-            self.session.binary_frame,
-        )
-        .filter(|cell| *cell != (0, 0))
-        .map(|cell| (cell.0 as i16, cell.1 as i16)))
+            )
+            .filter(|cell| *cell != (0, 0))
+            .map(|cell| (cell.0 as i16, cell.1 as i16)))
     }
 
     /// `PathfinderClass::EstimateZoneCost` 0x42D170, shared by Find_Path and
@@ -1391,9 +1373,7 @@ impl Simulation {
             .playfield_bounds
             .ok_or("Foot precheck requires playfield bounds")?;
         let size = self
-            .playfield_size_height
-            .map(|height| (bounds.base, height))
-            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())
+            .map_size_diamond()
             .ok_or("Foot precheck requires original Map Size")?;
         query_foot_zone(
             &cells,
@@ -1528,7 +1508,6 @@ mod tests {
                     crate::sim::world::entry_test_fixture::fixture_with_rules(
                         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=400\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
                     );
-                sim.playfield_size_height = Some(16);
                 sim.session.game_mode_nonzero = skirmish;
                 let owner = sim.intern("Americans");
                 let mut house =

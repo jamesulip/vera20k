@@ -118,10 +118,6 @@ impl<'a> SimView<'a> {
         &self.simulation.houses
     }
 
-    pub fn path_grid(&self) -> Option<&'a crate::sim::pathfinding::PathGrid> {
-        self.simulation.path_grid()
-    }
-
     pub fn resolved_terrain(
         &self,
     ) -> Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid> {
@@ -157,16 +153,6 @@ impl<'a> SimView<'a> {
             self.simulation.playfield_bounds,
             self.simulation.playfield_revision,
         )
-    }
-
-    /// Full MapClass Size dimensions retained beside normalized LocalSize.
-    /// Radar input `0x00653D92..0x00653DE3` reads both values before resolving
-    /// its signed click cell through `MapClass::Get_CellClass`.
-    pub fn playfield_map_size(&self) -> Option<(i32, i32)> {
-        Some((
-            self.simulation.playfield_bounds?.base,
-            self.simulation.playfield_size_height?,
-        ))
     }
 }
 
@@ -463,6 +449,7 @@ mod tests {
             structure_upgrades: [None, None, None],
             structure_ai_sellable: false,
             structure_ai_repairable: false,
+            structure_online: true,
             trigger_tag: None,
         };
         let inits = GeneratedTechnoInitTable::try_new([GeneratedTechnoInit {

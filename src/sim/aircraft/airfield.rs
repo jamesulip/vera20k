@@ -6,9 +6,7 @@
 
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::find_nearby_cell::{
-    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
-};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::movement::ground_pose;
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::native_x87::distance_3d_leptons;
@@ -198,7 +196,6 @@ impl Simulation {
     /// allowed and no target cell. `None` is NullCell; a world without a
     /// zone grid (headless fixtures) asks no zone.
     fn airfield_search(&self, seed: (i16, i16), size: i32) -> Option<(i16, i16)> {
-        let (width, height) = self.map_size_diamond()?;
         let terrain = self.resolved_terrain.as_ref()?;
         let zone = self.zone_grid.as_ref().and_then(|zones| {
             zones.get_zone_id_native(
@@ -208,33 +205,17 @@ impl Simulation {
                 false,
             )
         });
-        let path_grid = self.path_grid_snapshot();
-        find_nearby_passable_cell(
+        self.nearby_passable_cell(
             (i32::from(seed.0), i32::from(seed.1)),
-            &NearbyQuery {
-                native_cells: None,
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
+            NearbyArgs::plain(
+                PassabilityArgs {
                     speed_type: SpeedType::Foot,
                     required_zone_id: zone,
                     movement_zone: MovementZone::Normal,
                     bridge_aware_zone: false,
                 },
-                footprint: NearbyFootprint::new(size, size),
-                allow_bridge_cells: true,
-                check_height: false,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(width, height),
-                target_cell: None,
-                path_grid: path_grid.as_deref(),
-                resolved_terrain: Some(terrain),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
-            },
-            self.session.binary_frame,
+                NearbyFootprint::new(size, size),
+            ),
         )
         .filter(|cell| *cell != (0, 0))
         .map(|(x, y)| (x as i16, y as i16))

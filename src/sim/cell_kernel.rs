@@ -316,9 +316,8 @@ pub fn selected_cell_surface_height(floor_z: i32, deck_selected: bool) -> i32 {
 }
 
 /// Alternate-list threshold: signed cell level plus four bridge levels,
-/// independent of the floor kernel. There is no
-/// `MapClass::PickInfantrySublocation` in this program — the name this
-/// comment used to carry was invented.
+/// independent of the floor kernel. `0x004ACA10`'s deck test
+/// ([`crate::sim::movement::bump_crush::pick_infantry_sublocation`]).
 pub fn selects_infantry_bridge_layer(has_high_bridge: bool, level: u8, input_z: i32) -> bool {
     let deck_z = i32::from(level as i8)
         .wrapping_add(4)

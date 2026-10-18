@@ -74,6 +74,12 @@ impl<T: Copy, const SIZE: usize> NativeHeap<T, SIZE> {
     /// Sift the root down: at each level the item moves to the cheaper child
     /// if that child costs less than it, the left one when they tie. The
     /// item is held aside and written once where it stops.
+    ///
+    /// Native tests the left child against the item, then the right against
+    /// the cheaper of the two. Choosing the cheaper child first (the right
+    /// only when it costs strictly less) and testing it against the item
+    /// moves to the same child: the chosen child costs no more than the
+    /// other, so it costs less than the item whenever native moves.
     fn sift_down(&mut self, less: &impl Fn(&T, &T) -> bool) {
         let Some(&item) = self.0.first() else {
             return;
@@ -82,26 +88,20 @@ impl<T: Copy, const SIZE: usize> NativeHeap<T, SIZE> {
         let mut position = 0;
         loop {
             let left = position * 2 + 1;
-            let mut smallest = position;
-            if left < len && less(&self.0[left], &item) {
-                smallest = left;
-            }
-            let right = left + 1;
-            if right < len {
-                let cheapest = if smallest == position {
-                    &item
-                } else {
-                    &self.0[left]
-                };
-                if less(&self.0[right], cheapest) {
-                    smallest = right;
-                }
-            }
-            if smallest == position {
+            if left >= len {
                 break;
             }
-            self.0[position] = self.0[smallest];
-            position = smallest;
+            let right = left + 1;
+            let child = if right < len && less(&self.0[right], &self.0[left]) {
+                right
+            } else {
+                left
+            };
+            if !less(&self.0[child], &item) {
+                break;
+            }
+            self.0[position] = self.0[child];
+            position = child;
         }
         self.0[position] = item;
     }

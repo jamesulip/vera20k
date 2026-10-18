@@ -699,10 +699,7 @@ const STAGING_MIN_CELLS: i32 = 3;
 /// (0, 0) no-cell answer.
 fn refinery_staging_cell(sim: &Simulation, rules: &RuleSet, bay: u64) -> Option<(u16, u16)> {
     use crate::rules::locomotor_type::SpeedType;
-    use crate::sim::find_nearby_cell::{
-        NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-        map_owned_radius_cap,
-    };
+    use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
     let building = sim.substrate.entities.get(bay)?;
     let queueing = sim
         .object_type(building.type_ref(), rules)
@@ -711,37 +708,17 @@ fn refinery_staging_cell(sim: &Simulation, rules: &RuleSet, bay: u64) -> Option<
         i32::from((building.position.rx() as i16).wrapping_add(queueing[0] as i16)),
         i32::from((building.position.ry() as i16).wrapping_add(queueing[1] as i16)),
     );
-    let (width, height) = sim
-        .playfield_bounds
-        .zip(sim.playfield_size_height)
-        .map(|(bounds, height)| (bounds.base, height))?;
-    let grid = sim.path_grid_snapshot();
-    find_nearby_passable_cell(
+    sim.nearby_passable_cell(
         seed,
-        &NearbyQuery {
-            native_cells: None,
-            raw_occupation: Some(&sim.substrate.raw_cell_occupation),
-            passability: PassabilityArgs {
+        NearbyArgs::plain(
+            PassabilityArgs {
                 speed_type: SpeedType::Wheel,
                 required_zone_id: None,
                 movement_zone: MovementZone::Normal,
                 bridge_aware_zone: false,
             },
-            footprint: NearbyFootprint::SINGLE,
-            allow_bridge_cells: true,
-            check_height: false,
-            check_occupancy: false,
-            radius_cap: map_owned_radius_cap(width, height),
-            target_cell: None,
-            path_grid: grid.as_deref(),
-            resolved_terrain: sim.resolved_terrain.as_ref(),
-            overlay_grid: sim.overlay_grid.as_ref(),
-            occupancy: Some(&sim.substrate.occupancy),
-            entities: Some(&sim.substrate.entities),
-            zone_grid: sim.zone_grid.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
-        },
-        sim.session.binary_frame,
+            NearbyFootprint::SINGLE,
+        ),
     )
     .filter(|&cell| cell != (0, 0))
 }

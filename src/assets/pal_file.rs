@@ -16,8 +16,6 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
-use std::path::Path;
-
 use crate::assets::error::AssetError;
 
 /// Number of colors in an RA2 palette (always 256 — one per possible byte value).
@@ -48,16 +46,6 @@ impl Color {
     /// Create a fully opaque color.
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
-    }
-
-    /// Create a fully transparent color (used for palette index 0).
-    pub const fn transparent() -> Self {
-        Self {
-            r: 0,
-            g: 0,
-            b: 0,
-            a: 0,
-        }
     }
 }
 
@@ -131,15 +119,6 @@ impl Palette {
         }
 
         Ok(Palette { colors })
-    }
-
-    /// Load a palette from a .pal file on disk.
-    ///
-    /// This is a convenience wrapper around from_bytes() for loading loose files.
-    /// In production, palettes are extracted from .mix archives and parsed via from_bytes().
-    pub fn load(path: &Path) -> Result<Self, AssetError> {
-        let data: Vec<u8> = std::fs::read(path)?;
-        Self::from_bytes(&data)
     }
 
     /// Create a copy of this palette with house colors (indices 16–31) replaced.

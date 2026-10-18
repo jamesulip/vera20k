@@ -570,39 +570,6 @@ fn format_debug_event_light(
 ) -> (egui::Color32, String) {
     let tick = event.tick;
     match &event.kind {
-        DebugEventKind::PhaseChange { from, to, reason } => (
-            egui::Color32::from_rgb(20, 120, 20),
-            format!("[{tick}] {from} \u{2192} {to} ({reason})"),
-        ),
-        DebugEventKind::Repath {
-            reason,
-            new_path_len,
-        } => (
-            egui::Color32::from_rgb(160, 130, 0),
-            format!("[{tick}] Repath: {reason} ({new_path_len} steps)"),
-        ),
-        DebugEventKind::Blocked { by_entity, cell } => (
-            egui::Color32::from_rgb(200, 50, 50),
-            format!(
-                "[{tick}] Blocked at ({},{}){}",
-                cell.0,
-                cell.1,
-                by_entity.map(|id| format!(" by #{id}")).unwrap_or_default(),
-            ),
-        ),
-        DebugEventKind::StuckAbort { blocked_ticks } => (
-            egui::Color32::from_rgb(180, 0, 0),
-            format!("[{tick}] STUCK ABORT after {blocked_ticks} ticks"),
-        ),
-        DebugEventKind::PathSegmentComplete { final_goal } => (
-            egui::Color32::from_rgb(30, 90, 160),
-            format!(
-                "[{tick}] Path segment complete{}",
-                final_goal
-                    .map(|(x, y)| format!(", repathing to ({x},{y})"))
-                    .unwrap_or_default(),
-            ),
-        ),
         DebugEventKind::MinerStateChange { from, to } => (
             egui::Color32::from_rgb(160, 110, 0),
             format!("[{tick}] Miner: {from} \u{2192} {to}"),
@@ -618,13 +585,6 @@ fn format_debug_event_light(
         DebugEventKind::SpecialMovementEnd => (
             egui::Color32::from_rgb(90, 50, 180),
             format!("[{tick}] Special movement ended"),
-        ),
-        DebugEventKind::LocomotorOverride { kind, active } => (
-            egui::Color32::from_rgb(160, 120, 0),
-            format!(
-                "[{tick}] Override {}: {kind}",
-                if *active { "ON" } else { "OFF" },
-            ),
         ),
     }
 }

@@ -36,25 +36,6 @@ pub const SIM_ONE: SimFixed = SimFixed::ONE;
 /// One half (0.5).
 pub const SIM_HALF: SimFixed = SimFixed::lit("0.5");
 
-/// Two (2.0).
-pub const SIM_TWO: SimFixed = SimFixed::lit("2");
-
-/// One and a half (1.5) — used for jumpjet deceleration multiplier.
-pub const SIM_1_5: SimFixed = SimFixed::lit("1.5");
-
-/// Smallest representable positive value (1/65536 ≈ 0.000015).
-pub const SIM_EPSILON: SimFixed = SimFixed::DELTA;
-
-/// Duration of one native movement frame, in seconds.
-///
-/// Retail locomotors integrate their per-second values once for each 15 Hz
-/// game frame. Keeping this fraction here gives every locomotor the same
-/// deterministic fixed-point rounding.
-#[inline]
-pub fn native_movement_frame_fraction() -> SimFixed {
-    SIM_ONE / SimFixed::from_num(RA2_LOGIC_FRAMES_PER_SECOND as u8)
-}
-
 /// RA2's native game-logic frame rate at normal speed: 15 logic frames per
 /// second. The single authority for every INI minutes/seconds->frames
 /// conversion (ROF, ReloadRate, C4Delay, ore growth, trigger time, ...).
@@ -68,13 +49,6 @@ pub const SIM_TICK_HZ: u32 = 45;
 // ---------------------------------------------------------------------------
 // Conversion helpers
 // ---------------------------------------------------------------------------
-
-/// Convert `SimFixed` to `f32` for render-layer output.
-/// Only use at the sim→render boundary, never within sim logic.
-#[inline]
-pub fn sim_to_f32(val: SimFixed) -> f32 {
-    val.to_num::<f32>()
-}
 
 /// Convert `f32` to `SimFixed` for loading INI data into the sim layer.
 /// Only use at data-load boundaries (rules.ini, art.ini parsing).
@@ -154,6 +128,7 @@ pub fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
 ///
 /// Examples: Speed=4 (HARV) → ~150 lep/sec, Speed=11 (E1) → ~420 lep/sec,
 /// Speed=100 → ~3825 lep/sec. Speed=0 → 0 (immobile).
+#[cfg(test)]
 pub fn ra2_speed_to_leptons_per_second(raw_speed: i32) -> SimFixed {
     // Conversion: leptons_per_tick = speed * 256 / 100, capped at 255.
     // leptons_per_second = leptons_per_tick * 15 (baseline = gamemd Slowest).
@@ -269,13 +244,6 @@ mod tests {
         let cell: u16 = facing_from_delta_int_u16(3, 4);
         let lepton: u16 = facing_from_delta_int_u16(3 * 256, 4 * 256);
         assert_eq!(cell, lepton);
-    }
-
-    #[test]
-    fn test_new_constants() {
-        assert_eq!(SIM_TWO, SimFixed::from_num(2));
-        let one_five: f32 = SIM_1_5.to_num();
-        assert!((one_five - 1.5).abs() < 0.001);
     }
 
     /// S0 GATE (design Correction 1): pin the ReadDouble->SimFixed quantization.

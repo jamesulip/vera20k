@@ -55,12 +55,6 @@ pub struct RecoilConfig {
 }
 
 impl RecoilConfig {
-    pub(crate) fn from_ini_section(section: &IniSection) -> Self {
-        let mut result = Self::default();
-        result.apply_pass(section);
-        result
-    }
-
     pub(crate) fn apply_pass(&mut self, section: &IniSection) {
         self.enabled = section.read_bool("TurretRecoil", self.enabled);
         self.turret.read(

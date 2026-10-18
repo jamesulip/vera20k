@@ -360,9 +360,14 @@ impl Simulation {
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         // A batched re-path waits for the next frame's batch as if the +640
         // timer still ran (`path_batch`, a proposed deviation).
-        if self.defer_path_search(id, super::path_batch::WaitingRequest::Code2Ladder) {
+        if self.defer_path_search(
+            id,
+            super::path_batch::WaitingRequest::Code2Ladder { urgency },
+        ) {
             return Ok(());
         }
+        // An answered re-path searches at the urgency it registered at.
+        let urgency = self.batched_code2_urgency(id, urgency);
         let request = request.into_path_request(destination, urgency);
         let found = self.foot_find_path(&request, rules, registry, frame_effects)?;
         self.substrate

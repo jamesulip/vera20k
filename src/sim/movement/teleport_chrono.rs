@@ -79,7 +79,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::components::DriveCoord;
-use crate::sim::find_nearby_cell::PassabilityArgs;
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::teleport_movement::{ChronoWarp, WarpSound};
@@ -698,14 +698,17 @@ impl Simulation {
                 (zone, bridge)
             });
         let found = self
-            .nearby_location_cell(
+            .nearby_passable_cell(
                 target,
-                PassabilityArgs {
-                    speed_type: SpeedType::Track,
-                    required_zone_id: zone,
-                    movement_zone,
-                    bridge_aware_zone: bridge,
-                },
+                NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: SpeedType::Track,
+                        required_zone_id: zone,
+                        movement_zone,
+                        bridge_aware_zone: bridge,
+                    },
+                    NearbyFootprint::SINGLE,
+                ),
             )
             .unwrap_or((0, 0));
         let terrain = self.resolved_terrain.as_ref();

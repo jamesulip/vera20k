@@ -120,10 +120,9 @@ impl CombatDamageDefaults {
             ivan_damage: section.read_int("IvanDamage", 100),
             ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
             ivan_icon_flicker_rate: section.read_int("IvanIconFlickerRate", 8),
-            splash_list: section
-                .read_list("SplashList", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            // Read only by the ordered Process owner (`native_processing`,
+            // `0x0066C184..0x0066C287`), which `RuleSet` publishes.
+            splash_list: Vec::new(),
             default_large_grey_smoke_system: section
                 .read_name("DefaultLargeGreySmokeSystem", 0x80)
                 .map(str::to_string),

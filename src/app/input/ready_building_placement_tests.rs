@@ -263,10 +263,7 @@ fn refresh_fixture_sidebar(
         .map(|name| ArmedSidebarEntry::BuildingPlacement(name.to_owned()));
     let (power_produced, power_drained) =
         production::power_balance_for_owner(&fixture.sim, &fixture.rules, &owner_name);
-    let factory_statuses = fixture
-        .projection
-        .factory_statuses(&fixture.sim, fixture.owner);
-    build_sidebar_view_with_spec(
+    let mut view = build_sidebar_view_with_spec(
         layout_spec,
         800.0,
         1200.0,
@@ -276,7 +273,6 @@ fn refresh_fixture_sidebar(
         power_drained,
         None,
         &queue,
-        &factory_statuses,
         &options,
         &ready,
         armed.as_ref(),
@@ -290,7 +286,19 @@ fn refresh_fixture_sidebar(
         None,
         [None; 2],
         fixture.projection.cameo_strips(),
-    )
+    );
+    let armed_building = armed
+        .as_ref()
+        .and_then(ArmedSidebarEntry::as_building_placement)
+        .and_then(|name| fixture.sim.interner.get(name));
+    fixture.projection.apply_cameo_draw_state(
+        &mut view,
+        &fixture.sim,
+        &fixture.rules,
+        fixture.owner,
+        armed_building,
+    );
+    view
 }
 
 fn press_cameo(

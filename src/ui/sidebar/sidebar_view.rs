@@ -3,15 +3,13 @@
 //! Extracted from sidebar/mod.rs for file-size limits.
 
 use crate::sim::intern::InternedId;
-#[cfg(test)]
-use crate::sim::production::BuildQueueState;
 use crate::sim::production::{
-    BuildOption, PRODUCTION_STEPS, ProducerFocusView, ProductionCategory, QueueItemView,
-    ReadyBuildingView,
+    BuildOption, CameoDrawState, PRODUCTION_STEPS, ProducerFocusView, ProductionCategory,
+    QueueItemView, ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
 
-use super::cameo_order::{CameoId, CameoStrips};
+use super::cameo_order::{CameoId, CameoRequestState, CameoStrips};
 use super::gadget_flash::SidebarGadgetState;
 
 /// Read-only drawing inputs from one retained cameo's Factory link and pending
@@ -24,6 +22,54 @@ pub(crate) struct CameoFactoryStatus {
     pub(crate) is_ready: bool,
     pub(crate) is_building: bool,
     pub(crate) is_on_hold: bool,
+}
+
+/// One retained object cameo's live inputs to `StripClass::Draw @ 0x006A9540`,
+/// gathered by the app's sidebar projection for every drawn frame.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ObjectCameoDrawInputs {
+    /// A live Factory link, which clears the unavailable overlay (Draw6A98D3).
+    pub(crate) linked: bool,
+    /// The retained strip's request word for this entry.
+    pub(crate) request: Option<CameoRequestState>,
+    /// Draw's own `FindFactory(1, 1, 1)`, `CanBuild(type, 0, 0)` and
+    /// `CheckBuildLimit` answers.
+    pub(crate) draw: CameoDrawState,
+    /// Draw6A978C: another BuildingType entry of this strip is pending or
+    /// producing.
+    pub(crate) strip_blocks: bool,
+    /// The linked Factory's or pending request's stage, Ready and Hold.
+    pub(crate) status: Option<CameoFactoryStatus>,
+    /// The armed building placement names this type.
+    pub(crate) armed: bool,
+}
+
+/// The one rule for a retained object cameo's drawn state: the unavailable
+/// overlay, the build-limit gate a press reads, the clock, Ready, Hold and the
+/// armed placement. The view builder only lays entries out; rebuilt views and
+/// every later frame take these fields from here.
+/// Executed controls: tools/sidebar_oracle/draw_availability.json and
+/// factory_sale_sidebar.json.
+pub(crate) fn draw_object_cameo(item: &mut SidebarItem, inputs: &ObjectCameoDrawInputs) {
+    // Request2 darkens even an Infantry/Vehicle source until its Factory
+    // arrives. A live link still overrides.
+    item.enabled = inputs.linked
+        || inputs.request == Some(CameoRequestState::Started)
+        || (inputs.request.is_none() && inputs.draw.enabled && !inputs.strip_blocks);
+    item.at_build_limit = inputs.draw.at_build_limit;
+    // StripDraw6A9812/6A9822/6A985D reads the linked Factory, even when that
+    // Factory holds another type. Hold6A9E9C requires rate0 or suspension; a
+    // cash stall retains its running rate and displays a frozen clock.
+    let status = inputs.status.as_ref();
+    item.progress = status
+        .map_or(0.0, |status| {
+            f32::from(status.progress) / f32::from(PRODUCTION_STEPS)
+        })
+        .clamp(0.0, 1.0);
+    item.is_ready = status.is_some_and(|status| status.is_ready);
+    item.is_building_this_type = status.is_some_and(|status| status.is_building);
+    item.is_on_hold = status.is_some_and(|status| status.is_on_hold);
+    item.is_armed = item.is_ready && inputs.armed;
 }
 
 /// The armed targeting selection as the sidebar consumes it (F06): exactly
@@ -79,35 +125,9 @@ pub(crate) fn build_sidebar_view(
     repair_button_size: Option<[f32; 2]>,
     sell_button_size: Option<[f32; 2]>,
 ) -> SidebarView {
+    // A layout-only fixture: drawn cameo state comes from `draw_object_cameo`.
     let mut cameos = CameoStrips::layout_fixture(build_options, ready_buildings, &[]);
     cameos.set_scroll_row(active_tab, scroll_rows);
-    // This layout-only fixture links the supplied active heads and completed
-    // buildings. Production supplies its retained, registry-validated links.
-    let mut factory_statuses: Vec<_> = queue_items
-        .iter()
-        .filter(|item| item.state != BuildQueueState::Queued)
-        .map(|item| CameoFactoryStatus {
-            type_id: item.type_id,
-            progress: item.progress,
-            is_ready: item.state == BuildQueueState::Done,
-            is_building: item.state == BuildQueueState::Building,
-            is_on_hold: item.state == BuildQueueState::Paused,
-        })
-        .collect();
-    for ready in ready_buildings {
-        if !factory_statuses
-            .iter()
-            .any(|status| status.type_id == ready.type_id)
-        {
-            factory_statuses.push(CameoFactoryStatus {
-                type_id: ready.type_id,
-                progress: PRODUCTION_STEPS,
-                is_ready: true,
-                is_building: false,
-                is_on_hold: false,
-            });
-        }
-    }
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
         screen_w,
@@ -118,7 +138,6 @@ pub(crate) fn build_sidebar_view(
         power_drained,
         tab_button_size,
         queue_items,
-        &factory_statuses,
         build_options,
         ready_buildings,
         armed,
@@ -145,7 +164,6 @@ pub(crate) fn build_sidebar_view_with_spec(
     power_drained: i32,
     tab_button_size: Option<[f32; 2]>,
     queue_items: &[QueueItemView],
-    factory_statuses: &[CameoFactoryStatus],
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
@@ -168,7 +186,6 @@ pub(crate) fn build_sidebar_view_with_spec(
         let entries = collect_build_entries(
             tab.category(),
             queue_items,
-            factory_statuses,
             build_options,
             ready_buildings,
             armed,
@@ -506,18 +523,14 @@ struct BuildEntry {
 fn collect_build_entries(
     category: ProductionCategory,
     queue_items: &[QueueItemView],
-    factory_statuses: &[CameoFactoryStatus],
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
     interner: Option<&crate::sim::intern::StringInterner>,
     sw_views: &[SuperWeaponView],
 ) -> Vec<BuildEntry> {
-    // Building-placement is_armed: matched by interned type_id.
-    let armed_building_id: Option<InternedId> = armed
-        .and_then(ArmedSidebarEntry::as_building_placement)
-        .and_then(|s| interner.and_then(|i| i.get(s)));
-    // SW is_armed: matched by section name (string compare).
+    // SW is_armed: matched by section name (string compare). An object
+    // cameo's armed state is part of its drawn state (`draw_object_cameo`).
     let armed_sw_section: Option<&str> = armed.and_then(ArmedSidebarEntry::as_super_weapon);
     let resolve = |id: InternedId| -> String {
         interner.map_or(format!("#{}", id.index()), |i| i.resolve(id).to_string())
@@ -555,23 +568,17 @@ fn collect_build_entries(
         }
     }
 
-    // Collect build options, merging ready-building state into matching entries
-    // so that a completed building shows "READY" on its existing cameo slot
-    // instead of spawning a duplicate entry.
+    // Collect build options. An object entry's drawn state (overlay, limit
+    // gate, clock, Ready, Hold, armed) comes from `draw_object_cameo`, which
+    // reads the retained cameo's live Factory link and request; these entries
+    // carry identity, text and queue counts only.
     let mut entries: Vec<BuildEntry> = build_options
         .iter()
         // CameoStrips already owns membership. A retained entry must still
         // draw when Selling makes its current FindFactory query fail.
         .filter(|opt| category_is_on_tab(category, opt.queue_category))
         .map(|opt| {
-            // StripDraw6A9812/6A9822/6A985D reads this entry's linked
-            // Factory, even when that Factory holds another type. Queue
-            // badges instead count this requested type (6A9C48..6A9CC3).
-            let factory = factory_statuses
-                .iter()
-                .find(|status| status.type_id == opt.type_id);
-            let is_ready = factory.is_some_and(|status| status.is_ready);
-            let is_armed = is_ready && armed_building_id == Some(opt.type_id);
+            // Queue badges count this requested type (6A9C48..6A9CC3).
             let queued_count = queue_items
                 .iter()
                 .filter(|item| {
@@ -584,22 +591,14 @@ fn collect_build_entries(
                 display_name: opt.display_name.clone(),
                 cost: Some(opt.cost),
                 queue_category: opt.queue_category,
-                // StripDraw6A98D3 clears unavailable DARKEN for a linked
-                // Factory, including an unfinished product. The unlinked
-                // queued entry still paints its current unavailable overlay.
-                enabled: factory.is_some() || opt.enabled,
-                at_build_limit: opt.at_build_limit,
-                progress: factory
-                    .map(|status| f32::from(status.progress) / f32::from(PRODUCTION_STEPS))
-                    .unwrap_or(0.0)
-                    .clamp(0.0, 1.0),
+                enabled: true,
+                at_build_limit: false,
+                progress: 0.0,
                 queued_count,
-                is_building_this_type: factory.is_some_and(|status| status.is_building),
-                is_ready,
-                // Hold6A9E9C requires rate0 or suspension; a cash stall
-                // retains its running rate and displays a frozen clock.
-                is_on_hold: factory.is_some_and(|status| status.is_on_hold),
-                is_armed,
+                is_building_this_type: false,
+                is_ready: false,
+                is_on_hold: false,
+                is_armed: false,
                 is_superweapon: false,
                 super_weapon_section: None,
             }
@@ -617,7 +616,6 @@ fn collect_build_entries(
             .iter()
             .any(|e| e.type_id.eq_ignore_ascii_case(&r_type_str));
         if !already_listed {
-            let is_armed = armed_building_id == Some(r.type_id);
             entries.push(BuildEntry {
                 identity: CameoId::Object(r.type_id),
                 type_id: r_type_str,
@@ -626,7 +624,7 @@ fn collect_build_entries(
                 queue_category: r.queue_category,
                 enabled: true,
                 at_build_limit: false,
-                progress: 1.0,
+                progress: 0.0,
                 queued_count: queue_items
                     .iter()
                     .filter(|item| {
@@ -634,9 +632,9 @@ fn collect_build_entries(
                     })
                     .count(),
                 is_building_this_type: false,
-                is_ready: true,
+                is_ready: false,
                 is_on_hold: false,
-                is_armed,
+                is_armed: false,
                 is_superweapon: false,
                 super_weapon_section: None,
             });
@@ -689,7 +687,10 @@ mod tests {
 
     #[test]
     fn retained_sale_cameos_match_executed_native_draw_decisions() {
-        use super::{CameoFactoryStatus, collect_build_entries};
+        use super::{
+            CameoDrawState, CameoFactoryStatus, ObjectCameoDrawInputs, PRODUCTION_STEPS,
+            SidebarGadgetState, SidebarTab, build_sidebar_view, draw_object_cameo,
+        };
 
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/sidebar_oracle/factory_sale_sidebar.json",
@@ -730,40 +731,67 @@ mod tests {
                 ));
             }
             let mut options = Vec::new();
-            let mut statuses = Vec::new();
             for decision in decisions {
                 let name = decision["name"].as_str().unwrap();
                 let mut option = unit_option(&mut interner, name, ProductionCategory::Infantry);
                 option.object_category = ObjectCategory::Infantry;
                 option.cost = native["type_inputs"][name]["cost"].as_i64().unwrap() as i32;
-                // Original FindFactory/CanBuild result is this view's input;
-                // the independent final BL and draw commands are its oracle.
-                option.enabled = decision["unavailable"] == 0;
-                if decision["linked"] == 1 {
-                    statuses.push(CameoFactoryStatus {
-                        type_id: option.type_id,
-                        progress: stage,
-                        is_ready: complete,
-                        is_building: running,
-                        is_on_hold: !complete && !running,
-                    });
-                }
                 options.push(option);
             }
-            let entries = collect_build_entries(
-                ProductionCategory::Infantry,
+            let view = build_sidebar_view(
+                800.0,
+                2400.0,
+                SidebarTab::Infantry,
+                0,
+                0,
+                0,
+                None,
                 &queue,
-                &statuses,
                 &options,
                 &[],
                 None,
-                Some(&interner),
                 &[],
+                0,
+                Some(&interner),
+                &SidebarGadgetState::new(),
+                None,
+                None,
             );
             let commands = control["draw_commands"].as_array().unwrap();
-            for (decision, entry) in decisions.iter().zip(&entries) {
+            for (decision, option) in decisions.iter().zip(&options) {
+                let name = decision["name"].as_str().unwrap();
+                let mut item = view
+                    .items
+                    .iter()
+                    .find(|item| item.type_id == name)
+                    .unwrap_or_else(|| panic!("{name} is laid out"))
+                    .clone();
+                let linked = decision["linked"] == 1;
+                draw_object_cameo(
+                    &mut item,
+                    &ObjectCameoDrawInputs {
+                        linked,
+                        request: None,
+                        // Original FindFactory/CanBuild result is this entry's
+                        // input; the independent final BL and draw commands
+                        // are its oracle.
+                        draw: CameoDrawState {
+                            enabled: decision["unavailable"] == 0,
+                            at_build_limit: false,
+                        },
+                        strip_blocks: false,
+                        status: linked.then_some(CameoFactoryStatus {
+                            type_id: option.type_id,
+                            progress: stage,
+                            is_ready: complete,
+                            is_building: running,
+                            is_on_hold: !complete && !running,
+                        }),
+                        armed: false,
+                    },
+                );
                 assert_eq!(
-                    entry.enabled,
+                    item.enabled,
                     decision["final_bl"] == 0,
                     "{}",
                     control["name"]
@@ -771,14 +799,13 @@ mod tests {
                 let drew = |kind: &str| {
                     commands
                         .iter()
-                        .any(|command| command["name"] == entry.type_id && command["kind"] == kind)
+                        .any(|command| command["name"] == name && command["kind"] == kind)
                 };
-                assert_eq!(!entry.enabled, drew("unavailable_darken"));
-                assert_eq!(entry.is_ready, drew("ready_text"));
-                assert_eq!(entry.is_building_this_type, drew("clock"));
+                assert_eq!(!item.enabled, drew("unavailable_darken"));
+                assert_eq!(item.is_ready, drew("ready_text"));
+                assert_eq!(item.is_building_this_type, drew("clock"));
                 assert_eq!(
-                    (entry.progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round()
-                        as u16,
+                    (item.progress * f32::from(PRODUCTION_STEPS)).round() as u16,
                     decision["stage"].as_u64().unwrap() as u16,
                 );
             }

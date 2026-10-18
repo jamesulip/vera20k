@@ -240,14 +240,6 @@ impl MissileSpawnRules {
         }
     }
 
-    /// The single-file read: one [`Self::apply_pass`] over a projected or raw
-    /// INI. Production replaces it with the per-pass result.
-    pub fn from_ini(ini: &IniFile) -> Self {
-        let mut rules = Self::default();
-        rules.apply_pass(ini);
-        rules
-    }
-
     fn read_general(&mut self, general: &IniSection) {
         let v3_acceleration = self.v3.acceleration;
         self.v3.read_general(general, "V3Rocket", v3_acceleration);
@@ -349,7 +341,9 @@ mod tests {
     use super::*;
 
     fn parse(text: &str) -> MissileSpawnRules {
-        MissileSpawnRules::from_ini(&IniFile::from_str(text))
+        let mut rules = MissileSpawnRules::default();
+        rules.apply_pass(&IniFile::from_str(text));
+        rules
     }
 
     #[test]

@@ -307,8 +307,6 @@ fn test_layered_path_cell_bridge_helpers() {
         tube_index: None,
         low_bridge_tube_cell: false,
     };
-    assert!(bridge_cell.is_bridge_transition_cell());
-    assert!(bridge_cell.is_elevated_bridge_cell());
     assert_eq!(bridge_cell.bridge_deck_level_if_any(), Some(4));
     assert_eq!(
         bridge_cell.effective_cell_z_for_layer(MovementLayer::Bridge),
@@ -318,7 +316,6 @@ fn test_layered_path_cell_bridge_helpers() {
         bridge_cell.effective_cell_z_for_layer(MovementLayer::Ground),
         1
     );
-    assert!(bridge_cell.can_enter_bridge_layer_from_ground());
 
     let low_bridge = PathCell {
         ground_walkable: true,
@@ -332,14 +329,11 @@ fn test_layered_path_cell_bridge_helpers() {
         tube_index: None,
         low_bridge_tube_cell: false,
     };
-    assert!(!low_bridge.is_bridge_transition_cell());
-    assert!(!low_bridge.is_elevated_bridge_cell());
     assert_eq!(low_bridge.bridge_deck_level_if_any(), Some(2));
     assert_eq!(
         low_bridge.effective_cell_z_for_layer(MovementLayer::Bridge),
         2
     );
-    assert!(!low_bridge.can_enter_bridge_layer_from_ground());
 }
 
 #[test]
@@ -960,7 +954,7 @@ fn path_grid_preserves_low_bridge_tube_metadata() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let path_cell = grid.cell(0, 0).expect("path cell");
     assert_eq!(path_cell.tube_index, Some(TubeId(7)));
-    assert!(path_cell.is_low_bridge_tube_cell());
+    assert!(path_cell.low_bridge_tube_cell);
 }
 
 #[test]
@@ -1077,6 +1071,18 @@ fn search_marker_overlay_uses_xor_parity() {
     overlay.toggle((3, 1));
     assert!(!overlay.contains((3, 1)));
     assert!(overlay.is_empty());
+
+    // Cells toggled in no particular order stay marked until toggled again,
+    // and no other cell is, inside their range or outside it.
+    for cell in [(5, 2), (1, 9), (5, 0), (300, 4), (1, 8), (5, 0)] {
+        overlay.toggle(cell);
+    }
+    for cell in [(5, 2), (1, 9), (300, 4), (1, 8)] {
+        assert!(overlay.contains(cell), "{cell:?}");
+    }
+    for cell in [(5, 0), (5, 1), (1, 7), (0, 9), (300, 5), (301, 0), (0, 0)] {
+        assert!(!overlay.contains(cell), "{cell:?}");
+    }
 }
 
 #[test]

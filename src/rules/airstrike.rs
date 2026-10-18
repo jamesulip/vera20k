@@ -16,15 +16,6 @@ pub struct AirstrikeSettings {
 }
 
 impl AirstrikeSettings {
-    pub(crate) fn from_ini_section(section: &IniSection) -> Self {
-        let mut result = Self::default();
-        result.apply_pass(section, |name| {
-            (!crate::rules::ini_parser::is_native_none_type_name(name))
-                .then(|| crate::rules::native_processing::abstract_type_stored_id(name))
-        });
-        result
-    }
-
     /// Aircraft41CEF0 owns name resolution/allocation. The caller supplies that
     /// live registry operation so allocations remain at their native read point.
     /// An omitted elite key falls back to the newly read normal value, not the

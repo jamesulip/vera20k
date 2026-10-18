@@ -113,12 +113,32 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
 
     let mut dug = false;
     let mut shovel_shown = false;
+    let mut carry_shown = false;
+    let mut empty_walk_after_payment = false;
     let mut paid_at = None;
     let start = credits(&s);
     for n in 0..3000 {
         frame(&mut s);
         for &slave in &slaves {
             let entity = s.scene.sim.substrate.entities.get(slave).unwrap();
+            if let Some((doing, _)) = entity.infantry_sprite_pose() {
+                if doing == 39 {
+                    assert_eq!(entity.slave.cargo().len(), 4, "Carry needs a full load");
+                    carry_shown = true;
+                    assert_eq!(
+                        s.scene
+                            .rules
+                            .animation_sequence("SLAV")
+                            .unwrap()
+                            .infantry_action(39)
+                            .unwrap()
+                            .start_frame,
+                        228
+                    );
+                }
+                empty_walk_after_payment |=
+                    paid_at.is_some() && doing == 3 && entity.slave.cargo().is_empty();
+            }
             dug |= !entity.slave.cargo().is_empty();
             shovel_shown |= entity
                 .infantry_sprite_pose()
@@ -133,6 +153,11 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
     }
     assert!(dug, "the slaves reach the ore and dig");
     assert!(shovel_shown, "a digging slave shows its Shovel sequence");
+    assert!(carry_shown, "a full returning slave shows the Carry bank");
+    assert!(
+        empty_walk_after_payment,
+        "after deposit an empty slave walks normally"
+    );
     let paid_at = paid_at.expect("a full slave carries its load home and pays");
     assert_eq!(
         (credits(&s) - start) % 100,
@@ -1114,4 +1139,113 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
     rearmed.arm(frame, delay);
     assert_eq!(attacker.passive_scan.timer(), rearmed);
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+}
+
+#[test]
+fn a_player_cell_order_relocates_a_refinery_with_its_existing_slave_manager() {
+    for ore in [false, true] {
+        let mut s = row_scene(&serde_json::json!({
+            "name": "player_relocate", "human": true, "manager_state": 5,
+            "nodes": [{"state": 3, "cell": [17, 13], "mission": "harvest"}],
+            // Keep the old site productive: native Working's separate auto
+            // relocation can overwrite an archive when the old field is empty.
+            "ore": if ore { serde_json::json!([[17,13,0,0,5],[24,13,0,0,5]]) }
+                else { serde_json::json!([[17,13,0,0,5]]) },
+        }));
+        s.scene.sim.production.ore_growth_config = OreGrowthConfig::disabled();
+        s.scene.sim.input_delay_ticks = 0;
+        s.scene
+            .rules
+            .set_buildup_control_for_test("YAREFN", [0, 17, 3]);
+        let old = s.master;
+        let slave = s.slaves[&0];
+        let owner = s.scene.sim.entities().get(old).unwrap().owner();
+        assert!(
+            s.scene
+                .sim
+                .takes_rally_point(old, "Americans", &s.scene.rules)
+        );
+        let goal = s
+            .scene
+            .sim
+            .factory_rally_cell_input(old, (24, 13), &s.scene.rules)
+            .unwrap()
+            .unwrap();
+        assert_eq!(goal, (24, 13));
+        let execute = s.scene.sim.session.tick + 1;
+        for command in [
+            Command::SetRally {
+                rx: goal.0,
+                ry: goal.1,
+                producer_ids: vec![old],
+            },
+            Command::SellBuilding { entity_id: old },
+        ] {
+            s.scene
+                .sim
+                .queue_command(CommandEnvelope::new(owner, execute, command));
+        }
+        frame(&mut s);
+        let actor = s.scene.sim.entities().get(old).unwrap();
+        assert!(actor.building_down(), "player SELL must start immediately");
+        if !ore {
+            assert_eq!(
+                actor.archive_target(),
+                Some(crate::sim::combat::TargetKind::Cell(goal.0, goal.1))
+            );
+        }
+        let mut converted = None;
+        for _ in 0..800 {
+            frame(&mut s);
+            if let Some(unit) = s.scene.sim.entities().values().find(|entity| {
+                entity.is_object_alive()
+                    && entity.slave_manager.is_some()
+                    && entity.category() == crate::map::entities::EntityCategory::Unit
+            }) {
+                converted = Some(unit.stable_id());
+                break;
+            }
+        }
+        let converted = converted.expect("SELL must convert through the production frame");
+        let sim = &s.scene.sim;
+        assert!(
+            sim.entities()
+                .get(old)
+                .is_none_or(|entity| !entity.is_object_alive())
+        );
+        let unit = sim.entities().get(converted).unwrap();
+        let destination = unit
+            .navigation
+            .nav_com()
+            .expect("converted unit keeps the archived goal");
+        assert_eq!(unit.mission.effective().known(), Some(MissionType::Move));
+        if !ore {
+            assert_eq!(destination, NavTargetRef::cell(goal.0, goal.1));
+        } else {
+            assert_ne!(
+                destination,
+                NavTargetRef::cell(goal.0, goal.1),
+                "FindDeployCell avoids the ore overlay for the new foundation"
+            );
+            assert!(
+                matches!(
+                    unit.slave_manager.as_ref().unwrap().state(),
+                    ManagerState::PackingUp | ManagerState::Scanning
+                ),
+                "the converted Unit may already run the native PackingUp -> Scanning visit"
+            );
+        }
+        assert_eq!(
+            unit.slave_manager
+                .as_ref()
+                .unwrap()
+                .slaves()
+                .collect::<Vec<_>>(),
+            [slave]
+        );
+        assert_eq!(
+            sim.entities().get(slave).unwrap().slave.owner(),
+            Some(converted)
+        );
+    }
 }

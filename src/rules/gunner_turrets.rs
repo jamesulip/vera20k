@@ -62,18 +62,6 @@ impl Default for GunnerTurrets {
 }
 
 impl GunnerTurrets {
-    /// Single raw-pass reader for direct ObjectType fixtures. Production runs
-    /// `apply_pass` against the retained native registry before projection.
-    pub(crate) fn from_ini_section(
-        id: &str,
-        section: &IniSection,
-        category: ObjectCategory,
-    ) -> Self {
-        let mut result = Self::default();
-        result.apply_pass(id, section, category);
-        result
-    }
-
     pub(crate) fn apply_pass(&mut self, id: &str, section: &IniSection, category: ObjectCategory) {
         self.charge_turret = section.read_bool("IsChargeTurret", self.charge_turret);
         if category != ObjectCategory::Vehicle || !id.eq_ignore_ascii_case("FV") {

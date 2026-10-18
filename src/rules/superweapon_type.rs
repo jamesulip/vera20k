@@ -134,8 +134,6 @@ pub struct SuperWeaponType {
     /// it, so it names the `[SuperWeaponTypes]` entry at that position
     /// (retail ChronoWarpSpecial: `ChronoSphere`, 3).
     pub pre_dependent: i32,
-    /// Targeting range in cells.
-    pub range: f32,
     /// WeaponType reference (e.g., NukeCarrier for nuke).
     pub weapon_type: Option<String>,
     /// Required secondary building (e.g., NukeSilo for nuke).
@@ -154,16 +152,12 @@ pub struct SuperWeaponType {
     /// the same residual, `0x006CEBD8`): the cue the Force Shield's launch
     /// plays (`0x006CD176`).
     pub start_sound: Option<String>,
-    /// Sidebar tab flash duration in frames on activation.
-    pub flash_sidebar_tab_frames: i32,
     /// `AIDefendAgainst=` (`+0xEC`, ReadBool at `0x006CEAF7`, constructor
     /// clear): a launch of this type alerts each computer house whose base is
     /// near the target (`HouseClass::Fire_SW @ 0x004FAE50`'s house loop).
     pub ai_defend_against: bool,
     /// When true, suspension doesn't auto-resume on power restore.
     pub manual_control: bool,
-    /// Cursor line drawing multiplier.
-    pub line_multiplier: i32,
 }
 
 impl SuperWeaponType {
@@ -210,8 +204,6 @@ impl SuperWeaponType {
                 .read_name("PreDependent", 0x28)
                 .and_then(SuperWeaponKind::from_ini_str)
                 .map_or(-1, SuperWeaponKind::native_index),
-            // ReadDouble -> `FSTP dword [EBP+0xF8]` (`0x006CEBF4`).
-            range: section.read_float("Range", 0.0),
             // ReadString 0x80 at `0x006CEA6D`, `0x006CED0F`, `0x006CEB7C`,
             // `0x006CEBBE`.
             weapon_type: section.read_name("WeaponType", 0x80).map(str::to_string),
@@ -222,10 +214,8 @@ impl SuperWeaponType {
                 .map(str::to_string),
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
-            flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", 0),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
-            line_multiplier: section.read_int("LineMultiplier", 0),
         })
     }
 }

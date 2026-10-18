@@ -401,7 +401,7 @@ pub(super) fn place_unit_crate(
     frame_effects: FrameEffects<'_>,
 ) -> UnitCrateOutcome {
     use crate::rules::locomotor_type::MovementZone;
-    use crate::sim::find_nearby_cell::PassabilityArgs;
+    use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
     use crate::sim::world::PlacementEvidence;
     let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
         return UnitCrateOutcome::NoObject;
@@ -441,14 +441,17 @@ pub(super) fn place_unit_crate(
             // `0x0048231E..0x00482366` push `(cell, Type+0x67C, -1, 0, 0, 1,
             // 1, 0, 0, 0, 1, &0, 0, 0)`: the type's SpeedType, zone -1 and
             // MovementZone Normal in the NearbyLocation shape.
-            sim.nearby_location_cell(
+            sim.nearby_passable_cell(
                 (i32::from(rx), i32::from(ry)),
-                PassabilityArgs {
-                    speed_type: object.speed_type,
-                    required_zone_id: None,
-                    movement_zone: MovementZone::Normal,
-                    bridge_aware_zone: false,
-                },
+                NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: object.speed_type,
+                        required_zone_id: None,
+                        movement_zone: MovementZone::Normal,
+                        bridge_aware_zone: false,
+                    },
+                    NearbyFootprint::SINGLE,
+                ),
             )
         });
     if let Some((nx, ny)) = nearby {

@@ -489,16 +489,6 @@ impl OwnerVisibility {
         }
     }
 
-    /// Clear only transient Gap Generator flags while preserving line of sight
-    /// and persisted map knowledge.
-    fn clear_gap_flags(&mut self) {
-        for cell in &mut self.cells {
-            *cell &= !(FLAG_GAP_COVERED | FLAG_GAP_FOG);
-        }
-        // The cleared cover is a published bit.
-        self.tracked.complete = false;
-    }
-
     /// The raw cell flags in row-major order.
     pub fn cells_raw(&self) -> &[u8] {
         &self.cells
@@ -728,6 +718,7 @@ pub struct FogState {
 impl FogState {
     /// An empty viewer domain with the allocated map dimensions. Reveal and
     /// gap admission always initialize their own private House+240 state.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(width: u16, height: u16) -> Self {
         Self {
             width,
@@ -1028,6 +1019,7 @@ impl FogState {
 
     /// Recreate the serialized CellClass cloak-owner words for current map
     /// bounds without inventing a cloak-generator mask producer.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reset_cloaked_by_houses(&mut self) {
         self.cloaked_by_houses.clear();
         self.cloaked_by_houses
@@ -1432,13 +1424,6 @@ impl FogState {
     pub fn reset_explored_for_owner(&mut self, owner: InternedId) {
         let cells = self.rectangular_cells();
         self.transition_whole_map_for_owner(owner, cells, true, false);
-    }
-
-    /// Clear the transient enemy/friendly Gap result on every viewer plane.
-    pub fn clear_gap_flags(&mut self) {
-        for visibility in self.by_owner.values_mut() {
-            visibility.clear_gap_flags();
-        }
     }
 
     /// Fog-only test adapter for Logic55B29A's signed modulo120. Production
@@ -2533,6 +2518,7 @@ const REVEAL_ON_FIRE_RADIUS: u16 = 3;
 /// The fire leaf `0x004876F0` over collected cells: unlike Psychic's
 /// reduce/increase pair, it never changes the shroud counter and tests
 /// counter > 0 for pending.
+#[cfg(any(test, feature = "test-support"))]
 fn fire_reveal_cells(fog: &mut FogState, owner: InternedId, cells: Vec<(u16, u16)>) {
     let width = fog.width;
     let height = fog.height;

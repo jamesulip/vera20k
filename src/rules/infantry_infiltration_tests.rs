@@ -6,11 +6,21 @@ use crate::rules::ruleset::RuleSet;
 /// Infantry ReadINI52466E..52469A runs after the explicit Infiltrate read.
 #[test]
 fn infantry_roles_force_infiltrate_even_after_explicit_no() {
+    let infantry = |body: &str| {
+        let ini = IniFile::from_str(&format!("[InfantryTypes]\n0=TEST\n[TEST]\n{body}\n"));
+        RuleSet::from_ini(&ini)
+            .unwrap()
+            .object("TEST")
+            .unwrap()
+            .infiltrate
+    };
     for role in ["C4", "Engineer", "Agent"] {
         let ini = IniFile::from_str(&format!("[TEST]\nInfiltrate=no\n{role}=yes\n"));
         let section = ini.section("TEST").unwrap();
-        let infantry = ObjectType::from_ini_section("TEST", section, ObjectCategory::Infantry);
-        assert!(infantry.infiltrate, "{role} overrides Infiltrate=no");
+        assert!(
+            infantry(&format!("Infiltrate=no\n{role}=yes")),
+            "{role} overrides Infiltrate=no"
+        );
         for category in [
             ObjectCategory::Vehicle,
             ObjectCategory::Building,
@@ -20,20 +30,11 @@ fn infantry_roles_force_infiltrate_even_after_explicit_no() {
         }
     }
     for (flags, expected) in [
-        ("", false),
+        ("Strength=100", false),
         ("Infiltrate=yes", true),
         ("c4=yes\nengineer=yes\nagent=yes", false),
     ] {
-        let ini = IniFile::from_str(&format!("[TEST]\n{flags}\n"));
-        assert_eq!(
-            ObjectType::from_ini_section(
-                "TEST",
-                ini.section_or_empty("TEST"),
-                ObjectCategory::Infantry
-            )
-            .infiltrate,
-            expected
-        );
+        assert_eq!(infantry(flags), expected, "{flags}");
     }
 }
 

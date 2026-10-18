@@ -15,19 +15,9 @@ pub(super) fn update(publication: &mut LivePublication<'_>, input: RimCoord, fam
     };
     let bounds = match family {
         Family::High => {
-            let size = publication
-                .sim
-                .playfield_bounds
-                .zip(publication.sim.playfield_size_height)
-                .map(|(bounds, height)| (bounds.base, height))
-                .or_else(|| {
-                    publication
-                        .sim
-                        .bridge_state
-                        .as_ref()?
-                        .native_zone_source_size()
-                });
-            let Some((width, height)) = size else { return };
+            let Some((width, height)) = publication.sim.map_size_diamond() else {
+                return;
+            };
             RimBounds::Diamond { width, height }
         }
         Family::Low => RimBounds::Rect(NativeStartBounds::from_session(

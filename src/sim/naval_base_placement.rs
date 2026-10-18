@@ -9,11 +9,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::find_nearby_cell::{
-    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
-};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::house_state::HouseState;
-use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
 
 /// Find the one naval ready-Building site selected by the native fast path.
@@ -40,28 +37,21 @@ pub(crate) fn find_naval_base_placement(
     // admission rather than becoming an early Rust-side failure.
     let origin = house.base_origin();
 
-    // This is an active MapClass query. Missing PathGrid, real CellClass
-    // terrain, diamond bounds, or Size-height authority cannot be replaced by
-    // the compatibility projection without changing bridge pools or Z.
-    let path_grid = sim.path_grid()?;
     let resolved_terrain = sim.resolved_terrain.as_ref()?;
-    let playfield_bounds = sim.playfield_bounds?;
-    let size_height = sim.playfield_size_height?;
-    let query = naval_query(
-        path_grid,
-        resolved_terrain,
-        sim.overlay_grid.as_ref(),
-        sim.zone_grid.as_ref(),
-        playfield_bounds,
-        playfield_bounds.base,
-        size_height,
-        i32::from(width).wrapping_add(2),
-        i32::from(height).wrapping_add(2),
-    );
-    let candidate = find_nearby_passable_cell(
+    let candidate = sim.nearby_passable_cell(
         (i32::from(origin.0 as i16), i32::from(origin.1 as i16)),
-        &query,
-        sim.session.binary_frame,
+        NearbyArgs::plain(
+            PassabilityArgs {
+                speed_type: SpeedType::Float,
+                required_zone_id: None,
+                movement_zone: MovementZone::Normal,
+                bridge_aware_zone: false,
+            },
+            NearbyFootprint::new(
+                i32::from(width).wrapping_add(2),
+                i32::from(height).wrapping_add(2),
+            ),
+        ),
     )?;
     if candidate == (0, 0) {
         return None;
@@ -86,42 +76,6 @@ fn first_buildable_shipyard<'a>(
         house.side_index,
         sim.session.game_options.super_weapons,
     )
-}
-
-fn naval_query<'a>(
-    path_grid: &'a PathGrid,
-    resolved_terrain: &'a crate::map::resolved_terrain::ResolvedTerrainGrid,
-    overlay_grid: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
-    zone_grid: Option<&'a crate::sim::pathfinding::zone_map::ZoneGrid>,
-    playfield_bounds: crate::sim::cell_rect::PlayfieldBounds,
-    size_width: i32,
-    size_height: i32,
-    footprint_width: i32,
-    footprint_height: i32,
-) -> NearbyQuery<'a> {
-    NearbyQuery {
-        native_cells: None,
-        raw_occupation: None,
-        passability: PassabilityArgs {
-            speed_type: SpeedType::Float,
-            required_zone_id: None,
-            movement_zone: MovementZone::Normal,
-            bridge_aware_zone: false,
-        },
-        footprint: NearbyFootprint::new(footprint_width, footprint_height),
-        allow_bridge_cells: true,
-        check_height: false,
-        check_occupancy: false,
-        radius_cap: map_owned_radius_cap(size_width, size_height),
-        target_cell: None,
-        path_grid: Some(path_grid),
-        resolved_terrain: Some(resolved_terrain),
-        overlay_grid,
-        occupancy: None,
-        entities: None,
-        zone_grid,
-        playfield_bounds: Some(playfield_bounds),
-    }
 }
 
 /// Compare the chosen CellClass center against exactly the first acquired live
@@ -168,4 +122,51 @@ fn first_yard_distance_accepts(
     );
     let cap = rules.ai_naval_yard_adjacency.wrapping_shl(8);
     distance <= cap
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_naval_base_placement;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    /// The naval branch `0x005060E8..0x00506213` seeds FNPC (`0x00506193`)
+    /// at the base origin with the plain pushes `0x0050616D..0x0050618D`
+    /// (Float, zone -1, Normal) and the yard's Foundation width + 2 by
+    /// height + 2 (`0x00506125`, `0x0050613B`). Each CellRect cell fails on
+    /// any raw ground occupation bit (`CheckCellPassability @ 0x004834A0`,
+    /// `0x00483552..0x0048357A`), so an object in the seed's 4x3 rect moves
+    /// the site to a ring-1 cell whose rect misses it.
+    #[test]
+    fn raw_ground_occupation_in_the_yard_rect_moves_the_site() {
+        let ini = IniFile::from_str(
+            "[Countries]\n0=Americans\n1=Russians\n[General]\nShipyard=GAYARD\n\
+             [BuildingTypes]\n0=GAYARD\n[GAYARD]\nOwner=Russians\nNaval=yes\n\
+             [Water]\nFloat=100%\n",
+        );
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &ini,
+            &IniFile::from_str("[GAYARD]\nFoundation=2x1\n"),
+        )
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_water_arena(&rules, 0, 32);
+        let owner = sim.interner.intern("Russians");
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.country = Some(owner);
+        house.base_center = Some((16, 16));
+        assert_eq!(
+            find_naval_base_placement(&sim, &rules, owner),
+            Some((16, 16))
+        );
+
+        // The far corner of the seed's 4x3 rect; a 3x4 rect would miss it.
+        sim.substrate.raw_cell_occupation.mark_ground(19, 18, 0x40);
+        // Ring 1's first cell, whose rect (15..=18, 15..=17) misses (19, 18),
+        // is the frame-0 pick.
+        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(
+            find_naval_base_placement(&sim, &rules, owner),
+            Some((15, 15))
+        );
+    }
 }

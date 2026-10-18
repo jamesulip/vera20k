@@ -18,7 +18,6 @@ use crate::map::rmg::x87::{self, TruncF64, approx_sqrt_f32};
 use super::area;
 use super::blob::MinHeap;
 use super::regions::{Regions, RmgRegion};
-use super::shore::TileBlocks;
 use super::zones::{ZoneField, diamond_frame_contains};
 
 /// ~3*2^-32 with a perturbed mantissa — the lane-index draw scale.
@@ -66,7 +65,6 @@ pub struct StartsCtx<'a> {
     pub grid: &'a mut RmgGrid,
     pub scratch: &'a mut RmgScratch,
     pub ids: &'a TileIds,
-    pub blocks: &'a dyn TileBlocks,
     pub rng: &'a mut RmgRng,
     pub regions: &'a mut Regions,
 }
@@ -207,8 +205,6 @@ fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
             id,
             level: ctx.grid.get(x, y).map_or(0, |cell| cell.level),
             active: false,
-            seed: (x as i16, y as i16),
-            done: false,
             cell_count: 0,
             cells: Vec::new(),
             start_quota: 0,
@@ -594,7 +590,6 @@ mod tests {
                 grid: &mut grid,
                 scratch: &mut scratch,
                 ids: &identity,
-                blocks: &ClearBlocks,
                 rng: &mut rng,
                 regions: &mut regions,
             };

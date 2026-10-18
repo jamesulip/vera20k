@@ -164,12 +164,6 @@ impl BinkAudioDecoder {
     pub fn channels(&self) -> u16 {
         self.channels
     }
-    pub fn frame_len(&self) -> usize {
-        self.frame_len
-    }
-    pub fn use_dct(&self) -> bool {
-        self.use_dct
-    }
     pub fn reset(&mut self) {
         self.first = true;
         for ch in &mut self.prev {

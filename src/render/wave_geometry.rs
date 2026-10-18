@@ -57,11 +57,13 @@ fn emit_line(
 }
 
 /// Native7602E0 has different clipping at its contiguous and ring-wrapped Z
-/// branches. The screen-texture renderer uses Fast; Fallback is retained for
-/// original component controls, without inventing simulation ring state.
+/// branches. The screen-texture renderer uses Fast; Fallback exists only in
+/// tests, for the original component controls, without inventing simulation
+/// ring state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MagneticClipPath {
     Fast,
+    #[cfg(test)]
     Fallback,
 }
 
@@ -336,6 +338,7 @@ impl MagneticWaveDraw {
         }
         let inset = match self.clip_path {
             MagneticClipPath::Fast => 3,
+            #[cfg(test)]
             MagneticClipPath::Fallback => 2,
         };
         let last_y = spans

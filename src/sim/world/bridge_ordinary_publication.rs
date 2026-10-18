@@ -185,11 +185,7 @@ impl RepairHost for LiveOrdinary<'_, '_> {
         match family {
             Family::High => NativeStartBounds::from_session(sim, self.live.terrain()).contains(p),
             Family::Low => {
-                let Some((w, h)) = sim
-                    .bridge_state
-                    .as_ref()
-                    .and_then(|s| s.native_zone_source_size())
-                else {
+                let Some((w, h)) = sim.map_size_diamond() else {
                     return false;
                 };
                 let (x, y) = (i32::from(p.0), i32::from(p.1));

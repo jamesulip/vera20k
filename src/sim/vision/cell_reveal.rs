@@ -145,6 +145,13 @@ fn edge_frame_gates(ground: u8, cache: MapCellEdgeCache, fog_channel: bool) -> (
     }
 }
 
+/// Whether a neighbour with these ground bits and cache sets its
+/// [`EDGE_FRAME_BITS`] bit on the `[ground, fog]` channels: its visible bit,
+/// or its cache's initialized bit, is clear.
+fn edge_neighbor_clear(ground: u8, cache: MapCellEdgeCache) -> [bool; 2] {
+    [ground & GROUND_VISIBLE == 0, !cache.initialized]
+}
+
 /// The neighbour bits of [`SHROUD_EDGE_LUT`]'s index, for [`ROW_NEIGHBORS`].
 const EDGE_FRAME_BITS: [u8; 8] = [0x40, 0x80, 0x01, 0x20, 0x02, 0x10, 0x08, 0x04];
 
@@ -278,44 +285,112 @@ impl OwnerVisibility {
         fog_channel: bool,
         native_cells: Option<&NativeCellQuery<'_>>,
     ) -> i8 {
-        let interior = self.interior_index(cell, native_cells);
-        let center = match interior {
-            Some(index) => VisibilityCell::Real(index),
-            None => self.visibility_cell(cell, native_cells),
-        };
-        let (ground, cache) = self.map_cell_parts(center);
-        let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
-        let fallback = if any { -1 } else { -2 };
-        if !eligible {
-            return fallback;
+        let channel = usize::from(fog_channel);
+        if let Some(index) = self.interior_index(cell, native_cells) {
+            return self.center_edge_frame(VisibilityCell::Real(index), fog_channel, || {
+                self.interior_edge_masks(index)[channel]
+            });
         }
-        let width = self.width as isize;
-        let mut mask = 0u8;
-        for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
-            // An interior cell's neighbours are the cells beside it in the grid.
-            let key = match interior {
-                Some(index) => VisibilityCell::Real(
-                    index.wrapping_add_signed(isize::from(dy) * width + isize::from(dx)),
-                ),
-                None => self.visibility_cell(
+        let center = self.visibility_cell(cell, native_cells);
+        self.center_edge_frame(center, fog_channel, || {
+            let mut mask = 0u8;
+            for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
+                let key = self.visibility_cell(
                     (
                         (cell.0 as i16).wrapping_add(dx) as u16,
                         (cell.1 as i16).wrapping_add(dy) as u16,
                     ),
                     native_cells,
-                ),
-            };
-            let (ground, cache) = self.map_cell_parts(key);
-            let set = if fog_channel {
-                cache.initialized
-            } else {
-                ground & GROUND_VISIBLE != 0
-            };
-            if !set {
-                mask |= bit;
+                );
+                let (ground, cache) = self.map_cell_parts(key);
+                if edge_neighbor_clear(ground, cache)[channel] {
+                    mask |= bit;
+                }
+            }
+            mask
+        })
+    }
+
+    /// [`Self::map_cell_edge_frame`] for `center` from its gates and the
+    /// neighbour bits `mask` reads, which `6D8700` reads only for an
+    /// eligible center.
+    fn center_edge_frame(
+        &self,
+        center: VisibilityCell,
+        fog_channel: bool,
+        mask: impl FnOnce() -> u8,
+    ) -> i8 {
+        let (ground, cache) = self.map_cell_parts(center);
+        let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
+        if !eligible {
+            return if any { -1 } else { -2 };
+        }
+        SHROUD_EDGE_LUT[usize::from(mask())] as i8
+    }
+
+    /// The `[ground, fog]` neighbour bits of interior cell `index` that
+    /// [`Self::map_cell_edge_frame`] sets. An interior cell's neighbours are
+    /// the cells beside it in the grid, so reading them looks nothing up.
+    fn interior_edge_masks(&self, index: usize) -> [u8; 2] {
+        let width = self.width as isize;
+        let mut masks = [0u8; 2];
+        for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
+            let neighbor = index.wrapping_add_signed(isize::from(dy) * width + isize::from(dx));
+            let clear = edge_neighbor_clear(
+                self.ground_flags[neighbor],
+                self.map_cell_edge_cache[neighbor],
+            );
+            for (mask, clear) in masks.iter_mut().zip(clear) {
+                if clear {
+                    *mask |= bit;
+                }
             }
         }
-        SHROUD_EDGE_LUT[usize::from(mask)] as i8
+        masks
+    }
+
+    /// The two frames MapCell `0x004A9CA0` (`0x004A9D09..0x004A9D41`) and
+    /// `0x004A9890` (`0x004A98FD..0x004A9935`) store after a reveal changes
+    /// `key` (`cell`): the ground frame and its open bit, the edge-input
+    /// note, then the fog frame and its open bit. The ground store writes
+    /// only the cell's own frame and open bit, so an interior cell's
+    /// neighbours are read once for both frames, the fog frame's before the
+    /// ground store rather than after it.
+    fn store_map_cell_frames(
+        &mut self,
+        key: VisibilityCell,
+        cell: (u16, u16),
+        before: (u8, i8),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> [i8; 2] {
+        let masks = self
+            .interior_index(cell, native_cells)
+            .map(|index| self.interior_edge_masks(index));
+        let frame = |vis: &Self, fog_channel: bool| match masks {
+            Some(masks) => {
+                vis.center_edge_frame(key, fog_channel, || masks[usize::from(fog_channel)])
+            }
+            None => vis.map_cell_edge_frame(cell, fog_channel, native_cells),
+        };
+        let ground = frame(self, false);
+        let (_, flags, cache) = self.map_cell_parts_mut(key);
+        cache.frames[0] = ground;
+        if ground == -1 {
+            *flags |= GROUND_OPEN;
+        }
+        self.note_edge_inputs(key, before);
+        debug_assert!(
+            self.interior_index(cell, native_cells)
+                .is_none_or(|index| masks == Some(self.interior_edge_masks(index))),
+            "the ground store changed a neighbour of {cell:?}"
+        );
+        let fog = frame(self, true);
+        let (_, _, cache) = self.map_cell_parts_mut(key);
+        cache.frames[1] = fog;
+        if fog == -1 {
+            cache.fog_open = true;
+        }
+        [ground, fog]
     }
 
     /// Original MapCell4A9CA0 on this plane; see [`FogState::reveal_map_cell`].
@@ -369,20 +444,8 @@ impl OwnerVisibility {
             }
             self.publish_knowledge(index);
         }
-        let ground = self.map_cell_edge_frame(cell, false, native_cells);
-        let (_, flags, cache) = self.map_cell_parts_mut(key);
-        cache.frames[0] = ground;
-        if ground == -1 {
-            *flags |= GROUND_OPEN;
-        }
-        self.note_edge_inputs(key, before);
-        let fog = self.map_cell_edge_frame(cell, true, native_cells);
-        let (_, _, cache) = self.map_cell_parts_mut(key);
-        cache.frames[1] = fog;
-        if fog == -1 {
-            cache.fog_open = true;
-        }
-        if !fresh && old.frames == [ground, fog] {
+        let frames = self.store_map_cell_frames(key, cell, before, native_cells);
+        if !fresh && old.frames == frames {
             return None;
         }
         let cell = match (key, native_cells) {
@@ -660,21 +723,7 @@ impl FogState {
         if let VisibilityCell::Real(index) = key {
             vis.publish_knowledge(index);
         }
-        let ground = self.map_cell_edge_frame(viewer, cell, false, native_cells);
-        let vis = self.by_owner.get_mut(&viewer).unwrap();
-        let (_, flags, cache) = vis.map_cell_parts_mut(key);
-        cache.frames[0] = ground;
-        if ground == -1 {
-            *flags |= GROUND_OPEN;
-        }
-        vis.note_edge_inputs(key, before);
-        let fog = self.map_cell_edge_frame(viewer, cell, true, native_cells);
-        let vis = self.by_owner.get_mut(&viewer).unwrap();
-        let (_, _, cache) = vis.map_cell_parts_mut(key);
-        cache.frames[1] = fog;
-        if fog == -1 {
-            cache.fog_open = true;
-        }
+        let frames = vis.store_map_cell_frames(key, cell, before, native_cells);
         //4A9981..4A9C48 interleaves the two channels for each neighbor.
         // The guarded recursive +90 arms cannot occur: a neighbor without
         // its eligible or open bit returns-2 in6D8700, not another frame.
@@ -682,7 +731,7 @@ impl FogState {
             self.propagate_map_cell_edge(viewer, neighbor, false, native_cells);
             self.propagate_map_cell_edge(viewer, neighbor, true, native_cells);
         }
-        if !fresh && old.frames == [ground, fog] {
+        if !fresh && old.frames == frames {
             return None;
         }
         let cell = match (key, native_cells) {

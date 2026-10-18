@@ -158,10 +158,6 @@ impl SavedLocalView {
         self.power_bar = Some(power_bar);
     }
 
-    pub fn power_bar(&self) -> Option<&SavedPowerBar> {
-        self.power_bar.as_ref()
-    }
-
     pub fn take_power_bar(&mut self) -> Option<SavedPowerBar> {
         self.power_bar.take()
     }

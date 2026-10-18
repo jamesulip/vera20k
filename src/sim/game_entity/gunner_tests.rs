@@ -32,7 +32,12 @@ fn object(native: &Value, charge: bool, count: i32, gunner: bool, gattling: bool
     section.set("TurretCount", &count.to_string());
     section.set("Gunner", if gunner { "yes" } else { "no" });
     section.set("IsGattling", if gattling { "yes" } else { "no" });
-    ObjectType::from_ini_section("FV", &section, ObjectCategory::Vehicle)
+    let mut object = ObjectType::from_ini_section("FV", &section, ObjectCategory::Vehicle);
+    // The ordered Process owner's one admitted-pass read of the FV table.
+    object
+        .gunner_turrets
+        .apply_pass("FV", &section, ObjectCategory::Vehicle);
+    object
 }
 
 fn assert_selection(entity: &GameEntity, expected: &Value, context: &str) {

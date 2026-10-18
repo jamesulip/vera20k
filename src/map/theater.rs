@@ -520,6 +520,7 @@ fn read_tileset_row(ini: &IniFile, ordinal: u32) -> Result<Option<(&IniSection, 
 /// Each section's positive `TilesInSet` advances the global tile_id counter.
 /// The filename is `{FileName}{NN:02}.{extension}` where NN is 1-indexed.
 /// Blank FileName entries consume tile_id slots but map to None.
+#[cfg(any(test, feature = "test-support"))]
 pub fn parse_tileset_ini(ini_data: &[u8], extension: &str) -> Result<TilesetLookup, MapError> {
     let ini = IniFile::from_bytes(ini_data).map_err(MapError::Ini)?;
     parse_tileset_sections(&ini, extension)
@@ -735,8 +736,6 @@ pub struct TheaterData {
     pub wood_bridge_set: Option<u16>,
     /// `[General] SlopeSetPieces=N` - TileSet section whose first tile becomes DAT_00ABC1F8.
     pub slope_set_pieces: Option<u16>,
-    /// `[General] SlopeSetPieces2=N` - TileSet section whose first tile becomes DAT_00AA1098.
-    pub slope_set_pieces2: Option<u16>,
     /// `[General] BridgeMiddle1=N` — BridgeSet-relative offset for the NS
     /// bridgehead variant block. The 4 NS variant tile_ids occupy
     /// `BridgeSet_start + {N-1, N, N+1, N+2}`. None if the key is absent.
@@ -744,12 +743,16 @@ pub struct TheaterData {
     /// `[General] BridgeMiddle2=N` — same for EW.
     pub bridge_middle_2: Option<u16>,
     /// `[General] Tunnels=N` - theater tile set for tunnel/low-bridge tube cells.
+    #[cfg(any(test, feature = "test-support"))]
     pub tunnels: Option<u16>,
     /// `[General] TrackTunnels=N` - track tunnel tile set.
+    #[cfg(any(test, feature = "test-support"))]
     pub track_tunnels: Option<u16>,
     /// `[General] DirtTunnels=N` - dirt tunnel tile set.
+    #[cfg(any(test, feature = "test-support"))]
     pub dirt_tunnels: Option<u16>,
     /// `[General] DirtTrackTunnels=N` - dirt track tunnel tile set.
+    #[cfg(any(test, feature = "test-support"))]
     pub dirt_track_tunnels: Option<u16>,
     /// Exact signed cumulative bases published for the four automatic Tube
     /// families in native comparison order. Missing or unresolved keys retain
@@ -853,7 +856,6 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
     let mut bridge_set = read_general_u16(general, "BridgeSet");
     let mut wood_bridge_set = read_general_u16(general, "WoodBridgeSet");
     let slope_set_pieces = read_general_u16(general, "SlopeSetPieces");
-    let slope_set_pieces2 = read_general_u16(general, "SlopeSetPieces2");
     let bridge_middle_1 = read_general_u16(general, "BridgeMiddle1");
     let bridge_middle_2 = read_general_u16(general, "BridgeMiddle2");
     let tunnels = read_general_u16(general, "Tunnels");
@@ -915,12 +917,15 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         bridge_set,
         wood_bridge_set,
         slope_set_pieces,
-        slope_set_pieces2,
         bridge_middle_1,
         bridge_middle_2,
+        #[cfg(any(test, feature = "test-support"))]
         tunnels,
+        #[cfg(any(test, feature = "test-support"))]
         track_tunnels,
+        #[cfg(any(test, feature = "test-support"))]
         dirt_tunnels,
+        #[cfg(any(test, feature = "test-support"))]
         dirt_track_tunnels,
         automatic_tube_bases,
         cliff_ranges,

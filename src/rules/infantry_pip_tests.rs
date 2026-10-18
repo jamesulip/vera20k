@@ -1,5 +1,5 @@
 //! ReadPip's frame/index trap through its production reader and type-pass owner.
-use super::{InfantryPips, ObjectCategory, ObjectType};
+use super::{InfantryPips, ObjectCategory};
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::native_processing::{NativeRulesRegistryState, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
@@ -145,12 +145,4 @@ fn retail_pip_fields_and_capacities_match_original_readers() {
             );
         }
     }
-}
-
-#[test]
-fn direct_infantry_fixtures_use_the_same_read_pip_once() {
-    let section = IniSection::new("E1".to_owned());
-    let object = ObjectType::from_ini_section("E1", &section, ObjectCategory::Infantry);
-    assert_eq!(object.pip(), section.read_pip("Pip", 1));
-    assert_eq!(object.occupy_pip(), section.read_pip("OccupyPip", 7));
 }

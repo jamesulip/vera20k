@@ -670,7 +670,78 @@ fn cell_to_u16(cell: (i32, i32)) -> Option<(u16, u16)> {
     }
 }
 
+/// What a caller of `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20`
+/// pushes besides the seed. Every static caller loads `g_Map` as ECX, so
+/// [`Simulation::nearby_passable_cell`] supplies the map itself.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NearbyArgs {
+    pub passability: PassabilityArgs,
+    pub footprint: NearbyFootprint,
+    pub allow_bridge_cells: bool,
+    pub check_height: bool,
+    pub check_occupancy: bool,
+    pub target_cell: Option<(i32, i32)>,
+    pub options: NearbySearchOptions,
+}
+
+impl NearbyArgs {
+    /// The shape most callers push: bridge cells allowed; no overlay,
+    /// height, obstacle or occupancy test; no target cell, so the pick is
+    /// the frame-counter modulo and draws no RNG; no quadrant skip.
+    pub(crate) const fn plain(passability: PassabilityArgs, footprint: NearbyFootprint) -> Self {
+        Self {
+            passability,
+            footprint,
+            allow_bridge_cells: true,
+            check_height: false,
+            check_occupancy: false,
+            target_cell: None,
+            options: NearbySearchOptions {
+                reject_any_overlay: false,
+            },
+        }
+    }
+}
+
 impl crate::sim::world::Simulation {
+    /// `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20` on the live map:
+    /// its cells and their raw occupation, the path, overlay, object and
+    /// zone grids, the playfield, the radius cap from the map's Size
+    /// ([`map_owned_radius_cap`]) and the current frame for the no-target
+    /// pick. `None` when nothing passes or the map size is unknown.
+    pub(crate) fn nearby_passable_cell(
+        &self,
+        seed: (i32, i32),
+        args: NearbyArgs,
+    ) -> Option<(u16, u16)> {
+        let (width, height) = self.map_size_diamond()?;
+        find_nearby_passable_cell_with_options(
+            seed,
+            &NearbyQuery {
+                native_cells: None,
+                raw_occupation: Some(&self.substrate.raw_cell_occupation),
+                passability: args.passability,
+                footprint: args.footprint,
+                allow_bridge_cells: args.allow_bridge_cells,
+                check_height: args.check_height,
+                check_occupancy: args.check_occupancy,
+                radius_cap: map_owned_radius_cap(width, height),
+                target_cell: args.target_cell,
+                path_grid: self.path_grid(),
+                resolved_terrain: self.resolved_terrain.as_ref(),
+                overlay_grid: self.overlay_grid.as_ref(),
+                occupancy: Some(&self.substrate.occupancy),
+                entities: Some(&self.substrate.entities),
+                zone_grid: self.zone_grid.as_ref(),
+                playfield_bounds: self.playfield_bounds,
+            },
+            args.options,
+            // The frame counter is committed late, so during an advance it
+            // still holds the current frame, the value the pick aliases.
+            self.session.binary_frame,
+        )
+    }
+
     /// TechnoClass NearbyLocation `0x00703590`: FNPC seeded at the cell of
     /// `anchor`'s coordinate (its vt+0x48; the object's own when `anchor` is
     /// NULL) with the object's SpeedType (Winged read as Track), its
@@ -713,59 +784,19 @@ impl crate::sim::world::Simulation {
                     entity.on_bridge(),
                 )
             });
-        let cell = self.nearby_location_cell(
+        let cell = self.nearby_passable_cell(
             seed,
-            PassabilityArgs {
-                speed_type,
-                required_zone_id: zone,
-                movement_zone: object.movement_zone,
-                bridge_aware_zone: entity.on_bridge(),
-            },
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type,
+                    required_zone_id: zone,
+                    movement_zone: object.movement_zone,
+                    bridge_aware_zone: entity.on_bridge(),
+                },
+                NearbyFootprint::SINGLE,
+            ),
         )?;
         Some((cell.0 as i16, cell.1 as i16))
-    }
-
-    /// `MapClass::Find_Nearby_Passable_Cell` in the argument shape
-    /// NearbyLocation (`0x00703590`), Teleport Update_Position
-    /// (`0x0071854F..0x007185D5`), PickupCrate's goodie
-    /// (`0x0048231E..0x00482366`) and Mission_Unload's pre-move and vehicle
-    /// passenger (`0x0073D772..0x0073D7B0`, `0x0073DA96..0x0073DADD`) push: one
-    /// cell, no overlay rejection, no height, obstacle or occupancy check,
-    /// bridge cells allowed, a zero target cell, no quadrant skip, and the
-    /// map's radius cap; each caller supplies the seed and the passability
-    /// inputs. `None` when nothing passes or the map size is unknown.
-    pub(crate) fn nearby_location_cell(
-        &self,
-        seed: (i32, i32),
-        passability: PassabilityArgs,
-    ) -> Option<(u16, u16)> {
-        let (width, height) = self
-            .playfield_bounds
-            .zip(self.playfield_size_height)
-            .map(|(b, h)| (b.base, h))?;
-        let grid = self.path_grid_snapshot();
-        find_nearby_passable_cell(
-            seed,
-            &NearbyQuery {
-                native_cells: None,
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability,
-                footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: true,
-                check_height: false,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(width, height),
-                target_cell: None,
-                path_grid: grid.as_deref(),
-                resolved_terrain: self.resolved_terrain.as_ref(),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
-            },
-            self.session.binary_frame,
-        )
     }
 
     /// `MapClass::Find_Nearby_Passable_Cell` in the argument shape
@@ -785,7 +816,6 @@ impl crate::sim::world::Simulation {
         movement_zone: MovementZone,
         options: NearbySearchOptions,
     ) -> Option<(u16, u16)> {
-        let (width, height) = self.map_size_diamond()?;
         let zone = self
             .zone_grid
             .as_ref()
@@ -793,37 +823,22 @@ impl crate::sim::world::Simulation {
             .and_then(|(zones, terrain)| {
                 zones.get_zone_id_native(terrain, seed, movement_zone, false)
             });
-        let query = NearbyQuery {
-            native_cells: None,
-            raw_occupation: Some(&self.substrate.raw_cell_occupation),
-            passability: PassabilityArgs {
-                speed_type: SpeedType::Wheel,
-                required_zone_id: zone,
-                movement_zone,
-                bridge_aware_zone: false,
-            },
-            footprint: NearbyFootprint::SINGLE,
-            allow_bridge_cells: false,
-            check_height: true,
-            check_occupancy: false,
-            radius_cap: map_owned_radius_cap(width, height),
-            target_cell: None,
-            path_grid: self.path_grid(),
-            resolved_terrain: self.resolved_terrain.as_ref(),
-            overlay_grid: self.overlay_grid.as_ref(),
-            occupancy: Some(&self.substrate.occupancy),
-            entities: Some(&self.substrate.entities),
-            zone_grid: self.zone_grid.as_ref(),
-            playfield_bounds: self.playfield_bounds,
-        };
-        find_nearby_passable_cell_with_options(
+        self.nearby_passable_cell(
             (i32::from(seed.0), i32::from(seed.1)),
-            &query,
-            options,
-            // The frame counter is committed late, so during this advance it
-            // still holds the current frame — the value the selection modulo
-            // must alias.
-            self.session.binary_frame,
+            NearbyArgs {
+                passability: PassabilityArgs {
+                    speed_type: SpeedType::Wheel,
+                    required_zone_id: zone,
+                    movement_zone,
+                    bridge_aware_zone: false,
+                },
+                footprint: NearbyFootprint::SINGLE,
+                allow_bridge_cells: false,
+                check_height: true,
+                check_occupancy: false,
+                target_cell: None,
+                options,
+            },
         )
     }
 }

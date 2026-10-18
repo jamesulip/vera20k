@@ -41,8 +41,6 @@ impl Default for RockingState {
 }
 
 impl RockingState {
-    pub const DEADBAND: SimFixed = SimFixed::lit("0.00002");
-
     /// Compatibility boundary only; simulation and pose consumers retain the
     /// native words. A value outside I16F16 saturates at this read boundary.
     pub fn angle_sideways(&self) -> SimFixed {
@@ -51,9 +49,11 @@ impl RockingState {
     pub fn angle_forwards(&self) -> SimFixed {
         fixed(self.angle_forwards)
     }
+    #[cfg(test)]
     pub fn vel_sideways(&self) -> SimFixed {
         fixed(self.vel_sideways)
     }
+    #[cfg(test)]
     pub fn vel_forwards(&self) -> SimFixed {
         fixed(self.vel_forwards)
     }

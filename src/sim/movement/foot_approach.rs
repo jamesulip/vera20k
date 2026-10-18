@@ -1158,10 +1158,7 @@ impl Simulation {
         rules: &RuleSet,
         cells: &NativeCellQuery<'_>,
     ) -> Result<Option<(u16, u16)>, String> {
-        use crate::sim::find_nearby_cell::{
-            NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-            map_owned_radius_cap,
-        };
+        use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
         let actor = self
             .substrate
             .entities
@@ -1193,38 +1190,26 @@ impl Simulation {
                 Some(cells),
             )
             .ok_or("Approach source zone absent")?;
-        let (bounds, height) = self
-            .playfield_bounds
-            .zip(self.playfield_size_height)
+        self.map_size_diamond()
             .ok_or("Approach requires map dimensions")?;
-        Ok(find_nearby_passable_cell(
-            (i32::from(retained.0), i32::from(retained.1)),
-            &NearbyQuery {
-                native_cells: Some(cells),
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
-                    speed_type: object.speed_type,
-                    required_zone_id: (zone != u32::MAX).then_some(zone),
-                    movement_zone: object.movement_zone,
-                    bridge_aware_zone: bridge_aware,
+        Ok(self
+            .nearby_passable_cell(
+                (i32::from(retained.0), i32::from(retained.1)),
+                NearbyArgs {
+                    allow_bridge_cells: false,
+                    check_height: true,
+                    ..NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: object.speed_type,
+                            required_zone_id: (zone != u32::MAX).then_some(zone),
+                            movement_zone: object.movement_zone,
+                            bridge_aware_zone: bridge_aware,
+                        },
+                        NearbyFootprint::SINGLE,
+                    )
                 },
-                footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: false,
-                check_height: true,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(bounds.base, height),
-                target_cell: None,
-                path_grid: self.path_grid.as_deref(),
-                resolved_terrain: Some(cells.terrain()),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: Some(bounds),
-            },
-            self.session.binary_frame,
-        )
-        .filter(|cell| *cell != (0, 0)))
+            )
+            .filter(|cell| *cell != (0, 0)))
     }
 }
 

@@ -483,46 +483,27 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
-        use crate::sim::find_nearby_cell::{
-            NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
-            map_owned_radius_cap,
-        };
+        use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
         let Some(rules) = rules else {
             return false;
         };
         let e = self.substrate.entities.get(id).unwrap();
         let coord = ground_pose::position_world_coord(&e.position);
         self.begin_fly_takeoff(id, Some(rules));
-        let grid = self.path_grid_snapshot();
-        let Some((width, height)) = self.map_size_diamond() else {
+        if self.map_size_diamond().is_none() {
             return false;
-        };
-        let target = find_nearby_passable_cell(
+        }
+        let target = self.nearby_passable_cell(
             ((coord.x / 256) as i16 as i32, (coord.y / 256) as i16 as i32),
-            &NearbyQuery {
-                native_cells: None,
-                raw_occupation: Some(&self.substrate.raw_cell_occupation),
-                passability: PassabilityArgs {
+            NearbyArgs::plain(
+                PassabilityArgs {
                     speed_type: SpeedType::Track,
                     required_zone_id: None,
                     movement_zone: MovementZone::Fly,
                     bridge_aware_zone: false,
                 },
-                footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: true,
-                check_height: false,
-                check_occupancy: false,
-                radius_cap: map_owned_radius_cap(width, height),
-                target_cell: None,
-                path_grid: grid.as_deref(),
-                resolved_terrain: self.resolved_terrain.as_ref(),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
-            },
-            self.session.binary_frame,
+                NearbyFootprint::SINGLE,
+            ),
         );
         if let Some(cell) = target {
             //4CEAD9..4CEB35 constructs from the selected CellStruct, then

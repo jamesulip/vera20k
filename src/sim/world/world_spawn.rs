@@ -28,6 +28,7 @@ use crate::sim::base_plan_generation::{preflight_recalc, recalc_base_plan};
 use crate::sim::combat::Health;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::{GameEntity, GeneratedTechnoInit, TechnoConstructorInit};
 use crate::sim::intern::InternedId;
 use crate::sim::production::{self, ProductionCategory};
@@ -275,6 +276,7 @@ impl Simulation {
         self.spawn_from_map_with_resolved(entities, rules, None)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn spawn_from_map_with_resolved(
         &mut self,
         entities: &[MapEntity],
@@ -576,18 +578,14 @@ impl Simulation {
                 }
                 sim.commit_map_placement_mission(stable_id, map_ent.mission);
                 if let Some(rules) = rules {
-                    // ReadINI44FCFC's explicit factory callback follows
-                    // successful Unlimbo/online initialization, before the
-                    // powered-down/NeedsEngineer suffix. The latter's
-                    // independent GoOffline+660 path remains unported.
-                    if map_ent.category == EntityCategory::Structure
-                        && let Some((owner, category)) = sim.substrate.entities.get(stable_id)
-                            .and_then(|entity| {
-                                let object = sim.object_type(entity.type_ref(), rules)?;
-                                Some((entity.owner(), crate::sim::production::factory_category_for_building(object)?))
-                            })
-                    {
-                        crate::sim::production::update_factory_queue(sim, rules, owner, category, FrameEffects::default());
+                    // ReadINI44FC1B..44FD23: the factory callback is inside
+                    // an admitted transition, not unconditional after Unlimbo.
+                    if map_ent.category == EntityCategory::Structure {
+                        if map_ent.structure_online {
+                            sim.go_building_online(stable_id, rules, FrameEffects::default());
+                        } else {
+                            sim.go_building_offline(stable_id, rules, FrameEffects::default());
+                        }
                     }
                     sim.finish_authored_building_enable(stable_id, rules);
                 }
@@ -1419,14 +1417,17 @@ impl Simulation {
                 // The shared FNPC owner preserves candidate order and frame
                 // choice and consumes no RNG. No 703590 getter substitutions.
                 let at = self
-                    .nearby_location_cell(
+                    .nearby_passable_cell(
                         (location.x / 256, location.y / 256),
-                        crate::sim::find_nearby_cell::PassabilityArgs {
-                            speed_type: object.speed_type,
-                            required_zone_id: None,
-                            movement_zone: MovementZone::Normal,
-                            bridge_aware_zone: false,
-                        },
+                        NearbyArgs::plain(
+                            PassabilityArgs {
+                                speed_type: object.speed_type,
+                                required_zone_id: None,
+                                movement_zone: MovementZone::Normal,
+                                bridge_aware_zone: false,
+                            },
+                            NearbyFootprint::SINGLE,
+                        ),
                     )
                     // Original FNPC's failed output is Cell::Empty, and this
                     // caller still performs its Map lookup and Unlimbo.
@@ -1520,25 +1521,18 @@ impl Simulation {
             .map_or(RawCellKey::Real(position.rx(), position.ry()), |terrain| {
                 RawCellKey::from_native(terrain, terrain.native_cell_identity(packed_cell))
             });
-        //481298..481313 reaches the live ground Gate only after ordinary
-        //vehicle/object gates. Reuse its Building4525F0/Door4A51B0 owner.
-        let gate_open = !priority
-            && bump_crush::native_ground_gate_open(
-                &self.substrate.raw_cell_occupation,
-                &self.substrate.occupancy,
-                &self.substrate.entities,
-                rules,
-                &self.interner,
-                key,
-                MovementLayer::Ground,
-            );
         let spot = bump_crush::place_infantry_in_native_cell(
             &self.substrate.raw_cell_occupation,
             key,
             MovementLayer::Ground,
             input,
             priority,
-            gate_open,
+            bump_crush::GroundGate::Live {
+                occupancy: &self.substrate.occupancy,
+                entities: &self.substrate.entities,
+                rules,
+                interner: &self.interner,
+            },
             &mut self.scenario_rng,
         )?;
         //Cell481180 removes each incoming XY low byte before adding the
@@ -2613,10 +2607,8 @@ impl Simulation {
             unit.veterancy.inherit(&veterancy);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
-        // A building's archive is a cell. Of its VERA writers (the Slave
-        // Miner refinery's relocation in `slave_manager`, the rally click on
-        // rally-line factories), only the relocation reaches an
-        // UndeploysInto building: no retail rally-line type undeploys.
+        // Cell clicks and the SlaveManager relocation share ArchiveTarget;
+        // conversion sends the new Unit to that existing goal.
         if let Some(TargetKind::Cell(x, y)) = archive {
             if !self.set_unit_destination(
                 new_sid,
