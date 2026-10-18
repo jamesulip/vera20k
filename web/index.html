@@ -18,6 +18,7 @@
     button, label.button { display: inline-block; padding: 8px 14px; border: 1px solid #555;
              border-radius: 6px; background: #1b1f27; color: #e8e8e8; font: inherit; cursor: pointer; }
     button:hover, label.button:hover { background: #262b36; }
+    #start { font-size: 18px; padding: 12px 24px; }
     #forget { position: fixed; bottom: 8px; right: 8px; font-size: 12px; padding: 4px 8px; }
     progress { width: 100%; }
   </style>
@@ -35,7 +36,29 @@
     <p id="copy" hidden><progress id="copy-progress" max="1" value="0"></progress>
        <span id="copy-text"></span></p>
   </div>
+  <button id="start" hidden>Start VERA20k</button>
   <button id="forget" hidden>Forget game files</button>
+  <script>
+    // Browsers keep audio silent until the player interacts with the page.
+    // Track every AudioContext the engine creates and resume any that are
+    // still suspended on the next click or key press.
+    (() => {
+      const contexts = [];
+      window.vera20kAudioContexts = contexts; // for diagnostics
+      const Native = window.AudioContext;
+      if (!Native) return;
+      window.AudioContext = class extends Native {
+        constructor(...args) { super(...args); contexts.push(this); }
+      };
+      const resumeAll = () => {
+        for (const context of contexts) {
+          if (context.state === "suspended") context.resume().catch(() => {});
+        }
+      };
+      addEventListener("pointerdown", resumeAll, true);
+      addEventListener("keydown", resumeAll, true);
+    })();
+  </script>
   <script type="module">
     const status = document.getElementById("status");
     const setup = document.getElementById("setup");
@@ -141,7 +164,12 @@
     } else if (!navigator.storage?.getDirectory) {
       status.textContent = "This browser has no private file storage (OPFS).";
     } else if (await readManifest()) {
-      await startEngine();
+      // One click first, so the browser lets the game's audio start.
+      const start = document.getElementById("start");
+      status.textContent = "";
+      start.hidden = false;
+      forget.hidden = false;
+      start.addEventListener("click", () => { start.hidden = true; startEngine(); }, { once: true });
     } else {
       status.textContent = "";
       setup.hidden = false;
