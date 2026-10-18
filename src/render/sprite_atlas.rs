@@ -20,7 +20,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use web_time::Instant;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;

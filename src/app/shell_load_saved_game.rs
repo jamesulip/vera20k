@@ -76,7 +76,7 @@ impl App {
                 &layout.browser,
                 extent,
                 pointer,
-                std::time::Instant::now(),
+                web_time::Instant::now(),
                 saved_file_input::host_double_click_limits(),
             )
         } else {
@@ -114,7 +114,7 @@ impl App {
                 &layout.browser,
                 y,
                 pointer_moved,
-                std::time::Instant::now(),
+                web_time::Instant::now(),
             );
         }
     }
@@ -218,7 +218,7 @@ impl App {
             entries,
             current.into(),
             empty.into(),
-            crate::map::rmg::saved_seeds::new_slot_file_time(std::time::SystemTime::now()),
+            crate::map::rmg::saved_seeds::new_slot_file_time(web_time::SystemTime::now()),
             visible_rows,
         )
     }

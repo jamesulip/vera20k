@@ -4,10 +4,29 @@ use crate::app::{App, AppState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
-use std::time::Instant;
+use web_time::Instant;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+
+/// The key this event would produce with no modifiers held.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn key_without_modifiers(event: &KeyEvent) -> Key {
+    event.key_without_modifiers()
+}
+
+/// Browsers report only the modified key. Lowercasing a single character
+/// undoes Shift for letters, which is what the hotkey bindings compare.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn key_without_modifiers(event: &KeyEvent) -> Key {
+    match &event.logical_key {
+        Key::Character(text) if text.chars().count() == 1 => {
+            Key::Character(text.to_lowercase().into())
+        }
+        key => key.clone(),
+    }
+}
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window
 /// event and a literal-key production capture enter this same binding owner.
@@ -456,7 +475,7 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     if !dialog.capture_focused {
         return;
     }
-    let unmodified = event.key_without_modifiers();
+    let unmodified = key_without_modifiers(event);
     let logical = hotkeys::binding_logical_key(&event.logical_key, &unmodified, event.location);
     let Some(vk) = hotkeys::logical_virtual_key(logical, event.location) else {
         return;

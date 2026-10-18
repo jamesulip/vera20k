@@ -94,7 +94,7 @@ mod tests {
             input.keys_held.insert(KeyCode::KeyT);
             input
                 .type_select
-                .press(KeyCode::KeyT, std::time::Instant::now(), false);
+                .press(KeyCode::KeyT, web_time::Instant::now(), false);
             input.queued_order_mode = OrderMode::AttackMove;
 
             input.cancel_tactical_gesture_and_targeting();

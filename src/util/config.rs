@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 /// Optional host override, in the working or executable directory.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))] // the browser has no config file
 const CONFIG_FILE_NAME: &str = "config.toml";
 
 /// Top-level game configuration, deserialized from config.toml.
@@ -139,6 +140,16 @@ impl GameConfig {
     /// `SetCurrentDirectoryA` before opening `RA2MD.INI` or any MIX archive.
     /// Rust keeps the resolved directory explicit instead of mutating the
     /// process-wide current directory.
+    /// The browser build has no config file; the install is the page's
+    /// in-memory copy of the player's folder.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load() -> Result<Self> {
+        Ok(Self::from_retail_asset_root(PathBuf::from(
+            crate::assets::web_files::WEB_RA2_DIR,
+        )))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load() -> Result<Self> {
         let working_dir =
             std::env::current_dir().context("Failed to locate the working directory")?;
@@ -147,6 +158,7 @@ impl GameConfig {
         Self::load_from(&working_dir, &executable)
     }
 
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
         let root = retail_asset_root_from_executable(executable)?;
         for directory in [working_dir, root.as_path()] {
@@ -198,6 +210,7 @@ impl GameConfig {
 }
 
 /// Return the directory that retail `WinMain` makes its file-search root.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 fn retail_asset_root_from_executable(executable: &Path) -> Result<PathBuf> {
     executable
         .parent()

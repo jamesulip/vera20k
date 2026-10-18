@@ -157,7 +157,7 @@ impl OfflineSkirmishRuntime {
     /// this cache with defaults and cannot perturb shell/RNG/RMG/co-op state.
     pub(crate) fn refresh_local_multiplayer_preferences(&mut self) {
         let refreshed = match self.ini_path.as_deref() {
-            Some(path) => match std::fs::read(path) {
+            Some(path) => match crate::util::vfs::read(path) {
                 Ok(bytes) => read_local_multiplayer_preferences(&bytes),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     LocalMultiplayerPreferences::default()
@@ -468,7 +468,7 @@ impl OfflineSkirmishRuntime {
         let Some(path) = self.ini_path.as_deref() else {
             return;
         };
-        let existing = match std::fs::read(path) {
+        let existing = match crate::util::vfs::read(path) {
             Ok(bytes) => bytes,
             Err(err) if err.kind() == io::ErrorKind::NotFound => Vec::new(),
             Err(err) => {
@@ -480,7 +480,7 @@ impl OfflineSkirmishRuntime {
             }
         };
         let updated = self.update_persistence_bytes(&existing);
-        if let Err(err) = std::fs::write(path, updated) {
+        if let Err(err) = crate::util::vfs::write(path, updated) {
             log::warn!(
                 "Could not persist Skirmish settings to {}: {err}",
                 path.display()
@@ -659,7 +659,7 @@ fn load_persistence(
     let Some(path) = path else {
         return fallback();
     };
-    match std::fs::read(path) {
+    match crate::util::vfs::read(path) {
         Ok(bytes) => {
             let snapshot = read_skirmish_snapshot(&bytes, defaults).unwrap_or_else(|err| {
                 log::warn!(

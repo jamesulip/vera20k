@@ -17,7 +17,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::time::Instant;
+use web_time::Instant;
 
 #[path = "unit_shadow_cache.rs"]
 mod shadow_cache;
@@ -875,6 +875,7 @@ pub fn build_unit_atlas(
         // One model at a time, its poses spread over the cores. Each worker
         // takes whole poses, so a pose's parts still share one render, and
         // results are merged back in key order.
+        #[cfg(not(target_arch = "wasm32"))]
         let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
         for type_keys in new_keys.chunk_by(|a, b| a.type_id == b.type_id) {
             let type_id = type_keys[0].type_id.as_str();
@@ -888,6 +889,18 @@ pub fn build_unit_atlas(
                 })
                 .collect();
             let (model, vpl) = (&model, vpl.as_ref());
+            // Browsers cannot spawn threads: render the poses in order here,
+            // as the scoped workers do when only one core is available.
+            #[cfg(target_arch = "wasm32")]
+            let results: Vec<Option<RenderedKey>> = {
+                let mut pose = None;
+                poses
+                    .iter()
+                    .flat_map(|keys| keys.iter())
+                    .map(|key| render_unit_key(model, key, vpl, &mut pose))
+                    .collect()
+            };
+            #[cfg(not(target_arch = "wasm32"))]
             let results: Vec<Option<RenderedKey>> = std::thread::scope(|scope| {
                 let jobs: Vec<_> = poses
                     .chunks(poses.len().div_ceil(workers))

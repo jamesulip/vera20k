@@ -16,7 +16,7 @@
 //! drives its tooltip/timer exactly as before.
 
 use std::collections::BTreeSet;
-use std::time::Instant;
+use web_time::Instant;
 
 use super::descriptor::DialogId;
 use super::layout::LaidOutControl;

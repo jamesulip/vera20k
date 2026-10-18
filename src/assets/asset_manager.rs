@@ -41,6 +41,16 @@ impl LooseAsset {
     /// and cannot safely coexist with truncation on other platforms. Snapshot
     /// only requested payloads; root indexing must not copy entire MIX archives.
     /// This is Rust storage policy, not native raw-file cache equivalence.
+    #[cfg(target_arch = "wasm32")]
+    fn bytes(&self) -> Option<&[u8]> {
+        self.bytes
+            .get_or_init(|| {
+                crate::assets::web_files::get(&self.path).map(|bytes| bytes.to_vec().into_boxed_slice())
+            })
+            .as_deref()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn bytes(&self) -> Option<&[u8]> {
         self.bytes
             .get_or_init(|| match std::fs::read(&self.path) {
@@ -1125,6 +1135,24 @@ impl AssetManager {
             .any(|archive| archive_name_matches(&archive.name, name))
     }
 
+    /// The browser's install folder is the in-memory store from the page.
+    #[cfg(target_arch = "wasm32")]
+    fn open_loose_root(ra2_dir: &Path) -> Result<HashMap<String, LooseAsset>, AssetError> {
+        Ok(crate::assets::web_files::names()
+            .into_iter()
+            .map(|name| {
+                let path = ra2_dir.join(&name);
+                let asset = LooseAsset {
+                    source_name: format!("loose:{}", path.display()),
+                    path,
+                    bytes: OnceLock::new(),
+                };
+                (name, asset)
+            })
+            .collect())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_loose_root(ra2_dir: &Path) -> Result<HashMap<String, LooseAsset>, AssetError> {
         let mut files = HashMap::new();
 

@@ -1419,7 +1419,7 @@ pub(crate) fn handle_type_select_key_edge(
             .match_state
             .input
             .type_select
-            .press(physical_code, std::time::Instant::now(), repeat);
+            .press(physical_code, web_time::Instant::now(), repeat);
         return true;
     }
     if !is_type_select && !state.match_state.input.type_select.owns_key(physical_code) {
@@ -1429,7 +1429,7 @@ pub(crate) fn handle_type_select_key_edge(
         .match_state
         .input
         .type_select
-        .release(physical_code, std::time::Instant::now());
+        .release(physical_code, web_time::Instant::now());
     if execute_tap {
         execute_type_select_tap(state);
     }
@@ -1654,7 +1654,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .match_presentation
                 .minimap
                 .as_mut()
-                .and_then(|minimap| minimap.cycle_radar_event(std::time::Instant::now()));
+                .and_then(|minimap| minimap.cycle_radar_event(web_time::Instant::now()));
             if let Some((rx, ry)) = event {
                 crate::app::input::camera::center_camera_on_cell(state, rx, ry);
             }
@@ -3166,7 +3166,7 @@ fn handle_control_group_command(
             // A recall on an empty group still clears the selection: the
             // deselect-all runs before the select loop, unconditionally.
             state.match_state.input.last_control_group_press =
-                Some((group_idx, std::time::Instant::now()));
+                Some((group_idx, web_time::Instant::now()));
             queue_selection_snapshot_command(state, live_group, false);
             apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }

@@ -54,21 +54,31 @@ impl MatchDiagnosticsState {
         if log.ticks.is_empty() {
             return Ok(None);
         }
-
-        let result = (|| {
-            std::fs::create_dir_all(replays_dir)?;
-            let path = replays_dir.join(format!("replay_tick{session_tick}_{unix_secs}.json"));
-            log.save(&path)?;
-            Ok(Some(ReplayLogFlush {
-                path,
-                tick_count: log.ticks.len(),
-            }))
-        })();
-
-        if result.is_err() {
-            self.replay_log = Some(log);
+        // The browser has no folder for debug replays; consume the segment
+        // rather than keep retrying a write that cannot succeed.
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (session_tick, replays_dir, unix_secs);
+            return Ok(None);
         }
-        result
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let result = (|| {
+                std::fs::create_dir_all(replays_dir)?;
+                let path = replays_dir.join(format!("replay_tick{session_tick}_{unix_secs}.json"));
+                log.save(&path)?;
+                Ok(Some(ReplayLogFlush {
+                    path,
+                    tick_count: log.ticks.len(),
+                }))
+            })();
+
+            if result.is_err() {
+                self.replay_log = Some(log);
+            }
+            result
+        }
     }
 
     /// Close the active segment at a timeline boundary (new match install or

@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::houses::HouseColorMap;

@@ -688,7 +688,7 @@ mod tests {
         input.type_select.across_map = native["across_map"].as_bool().unwrap();
         input.type_select.press(
             winit::keyboard::KeyCode::KeyT,
-            std::time::Instant::now(),
+            web_time::Instant::now(),
             false,
         );
         input.selection_order = outgoing;

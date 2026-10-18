@@ -23,7 +23,7 @@ use crate::rules::terrain_rules::{TerrainClass, TerrainRules};
 use crate::sim::rng::SimRng;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 struct Gsi0404AssetDirectory(PathBuf);
 

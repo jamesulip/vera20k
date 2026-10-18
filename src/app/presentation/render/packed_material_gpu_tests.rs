@@ -931,7 +931,7 @@ fn retained_packed_workload_timing() {
         let mut pool = InstanceBufferPool::new();
         pool.upload_on_device(&gpu.device, &gpu.queue, "packed_workload", &layer.instances);
         terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-        let start = std::time::Instant::now();
+        let start = web_time::Instant::now();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         clear(
             &mut encoder,

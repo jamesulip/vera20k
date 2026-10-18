@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
@@ -1842,8 +1842,8 @@ mod tests {
     }
 
     fn new_output_path(tag: &str) -> PathBuf {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let unique = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
         std::env::temp_dir().join(format!(

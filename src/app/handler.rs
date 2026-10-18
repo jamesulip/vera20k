@@ -6,7 +6,7 @@
 use super::input::dispatch;
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
-    KeyEventExtModifierSupplement, MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
+    MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
     ShellKey, WindowEvent, WindowId,
 };
 
@@ -201,7 +201,12 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        match Self::initialize(event_loop, capture_dimensions, self.startup_options) {
+        match Self::initialize(
+            event_loop,
+            capture_dimensions,
+            self.startup_options,
+            self.prepared_surface.take(),
+        ) {
             Ok(mut state) => {
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.prepare_state(&mut state);
@@ -766,7 +771,7 @@ impl ApplicationHandler for App {
                     }
 
                     if in_game {
-                        let unmodified = event.key_without_modifiers();
+                        let unmodified = crate::app::input::keyboard::key_without_modifiers(&event);
                         crate::app::input::keyboard::in_game_key_edge(
                             state,
                             crate::app::input::keyboard::InGameKeyEdge {

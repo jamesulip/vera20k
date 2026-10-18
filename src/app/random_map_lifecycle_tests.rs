@@ -129,8 +129,8 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     )
     .expect("retail startup Rules")
     .into_parts();
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let unique = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .expect("clock after epoch")
         .as_nanos();
     let seed_dir = std::env::temp_dir().join(format!(

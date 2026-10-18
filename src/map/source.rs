@@ -70,23 +70,23 @@ pub struct LoadedMap {
 }
 
 pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
-    map_file::ini_from_file_bytes(std::fs::read(path).ok()?).ok()
+    map_file::ini_from_file_bytes(crate::util::vfs::read(path).ok()?).ok()
 }
 
 pub(crate) fn load_map_by_name_or_path(ra2_dir: &Path, map_name: &str) -> Result<LoadedMap> {
     let direct: PathBuf = PathBuf::from(map_name);
-    if direct.is_absolute() && direct.exists() {
+    if direct.is_absolute() && crate::util::vfs::exists(&direct) {
         return load_map_from_path_with_source(&direct);
     }
 
     let in_ra2: PathBuf = ra2_dir.join(map_name);
-    if in_ra2.exists() {
+    if crate::util::vfs::exists(&in_ra2) {
         return load_map_from_path_with_source(&in_ra2);
     }
 
     for ext in MAP_EXTENSIONS {
         let candidate = ra2_dir.join(format!("{}.{}", map_name, ext));
-        if candidate.exists() {
+        if crate::util::vfs::exists(&candidate) {
             return load_map_from_path_with_source(&candidate);
         }
     }
@@ -139,7 +139,7 @@ pub fn asset_map_candidates(map_name: &str) -> Vec<String> {
 }
 
 fn load_map_from_path_with_source(path: &Path) -> Result<LoadedMap> {
-    let bytes = std::fs::read(path)?;
+    let bytes = crate::util::vfs::read(path)?;
     let payload_len = bytes.len();
     let source_sha256 = sha256_hex(&bytes);
     let map = map_file::load_from_bytes(bytes)?;
@@ -157,7 +157,7 @@ fn load_map_from_path_with_source(path: &Path) -> Result<LoadedMap> {
 pub fn try_load_mmx(ra2_dir: &Path, names: &[&str]) -> Result<LoadedMap> {
     for &name in names {
         let path: PathBuf = ra2_dir.join(name);
-        if path.exists() {
+        if crate::util::vfs::exists(&path) {
             match load_map_from_path_with_source(&path) {
                 Ok(loaded) => {
                     log::info!("Loaded map from {}", name);

@@ -36,6 +36,7 @@ pub mod retail_pointer_sort;
 pub mod sha256;
 pub mod single_instance;
 pub mod version;
+pub mod vfs;
 pub mod rect;
 // pub mod color;
 

@@ -86,7 +86,7 @@ pub(crate) fn render_wol_welcome_page(
         let title_window = state
             .frontend
             .shell_page_title
-            .paint(std::time::Instant::now());
+            .paint(web_time::Instant::now());
         let status_text = crate::app::App::wol_status_key(state)
             .map(|key| resolve_csf(state, key).into_owned())
             .unwrap_or_default();
@@ -203,7 +203,7 @@ pub(crate) fn render_wol_welcome_page(
         chrome,
         &buttons,
         crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        std::time::Instant::now(),
+        web_time::Instant::now(),
         None,
     );
 

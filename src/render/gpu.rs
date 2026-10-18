@@ -86,7 +86,7 @@ impl GpuContext {
     }
 
     /// Async initialization — called by new() via pollster::block_on().
-    async fn new_async(window: Arc<Window>) -> Result<Self> {
+    pub(crate) async fn new_async(window: Arc<Window>) -> Result<Self> {
         // wgpu 27's standard override selects a backend for reproducible
         // shroud GPU comparisons while retaining primary backends by default.
         // https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Backends.html#method.with_env
@@ -154,7 +154,15 @@ impl GpuContext {
 
         // Pick the best texture format for the surface.
         // This is usually Bgra8UnormSrgb on Windows, Bgra8Unorm on some other platforms.
-        let surface_caps: wgpu::SurfaceCapabilities = surface.get_capabilities(&adapter);
+        #[allow(unused_mut)]
+        let mut surface_caps: wgpu::SurfaceCapabilities = surface.get_capabilities(&adapter);
+        // wgpu's WebGPU backend reports RENDER_ATTACHMENT only, but passes the
+        // configured usage to the canvas, and the spec allows copies there:
+        // https://gpuweb.github.io/gpuweb/#dom-gpucanvasconfiguration-usage
+        #[cfg(target_arch = "wasm32")]
+        {
+            surface_caps.usages |= wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST;
+        }
         let required_surface_usages = wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::COPY_DST;
@@ -192,17 +200,31 @@ impl GpuContext {
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
+        // Browser canvases offer no sRGB format, but a unorm canvas accepts
+        // sRGB views. Renderers target `surface_format`; the canvas holds the
+        // same bytes in its unorm twin, and copies may differ only in sRGB-ness.
+        #[cfg(target_arch = "wasm32")]
+        let (canvas_format, surface_format) = (
+            surface_format.remove_srgb_suffix(),
+            surface_format.add_srgb_suffix(),
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        let canvas_format = surface_format;
 
         // Configure the surface with our chosen format and the window's current size.
         let window_size: winit::dpi::PhysicalSize<u32> = window.inner_size();
         let config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: required_surface_usages,
-            format: surface_format,
+            format: canvas_format,
             width: window_size.width.max(1), // wgpu panics on 0-sized surfaces
             height: window_size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: if canvas_format == surface_format {
+                vec![]
+            } else {
+                vec![surface_format]
+            },
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);

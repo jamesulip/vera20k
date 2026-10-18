@@ -183,7 +183,7 @@ fn production_shroud_rebuild_matches_original_tactical_scenes() {
 #[test]
 #[ignore = "requires retail archives and GPU; run optimized to measure the actual A raster/upload owners"]
 fn production_shroud_rebuild_workload_timing() {
-    use std::time::{Duration, Instant};
+    use web_time::{Duration, Instant};
 
     let native = fixture();
     let (frames, canvas) = stock_frames(&native).expect("RA2_DIR supplies stock SHROUD");

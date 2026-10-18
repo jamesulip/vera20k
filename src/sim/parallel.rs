@@ -5,103 +5,164 @@
 //! `&mut`, not interior mutability such as the shared cell dummy's
 //! coordinate. The pool's threads persist, so their thread-local scratch (the
 //! path search workspaces) stays allocated between frames.
+//!
+//! Browsers (wasm32) cannot start threads this way, so there every function
+//! runs on the caller's thread in item order. The results are identical by
+//! the contract above: no result depends on the thread count.
 
-use rayon::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use pooled::*;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use sequential::*;
 
-/// `work` over every item, results in item order. Workers steal items from
-/// each other, so slower cores (efficiency cores, a busy host) take fewer.
-/// A worker's panic resumes on the caller.
-pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
-    // A shared reference to a `Sync` closure is `Send`.
-    items.par_iter().map(&work).collect()
-}
+#[cfg(not(target_arch = "wasm32"))]
+mod pooled {
+    use rayon::prelude::*;
 
-/// [`map`] that starts the items in `order`, a permutation of their indices,
-/// each on the next free worker, with the results in item order. Starting
-/// the costliest items first keeps the slowest from running alone at the end.
-pub(crate) fn map_in_order<T: Sync, R: Send>(
-    items: &[T],
-    order: &[usize],
-    work: impl Fn(&T) -> R + Sync,
-) -> Vec<R> {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    debug_assert_eq!(order.len(), items.len(), "the order lists every item");
-    let next = AtomicUsize::new(0);
-    // A puller per worker takes the next item in `order` until none is
-    // left; one a busy worker never starts finds none left.
-    let pullers = rayon::current_num_threads().min(order.len());
-    let done: Vec<Vec<(usize, R)>> = (0..pullers)
-        .into_par_iter()
-        .with_max_len(1)
-        .map(|_| {
-            let mut done = Vec::new();
-            while let Some(&index) = order.get(next.fetch_add(1, Ordering::Relaxed)) {
-                done.push((index, work(&items[index])));
-            }
-            done
-        })
-        .collect();
-    let mut results: Vec<Option<R>> = items.iter().map(|_| None).collect();
-    for (index, result) in done.into_iter().flatten() {
-        results[index] = Some(result);
+    /// `work` over every item, results in item order. Workers steal items from
+    /// each other, so slower cores (efficiency cores, a busy host) take fewer.
+    /// A worker's panic resumes on the caller.
+    pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+        // A shared reference to a `Sync` closure is `Send`.
+        items.par_iter().map(&work).collect()
     }
-    results
-        .into_iter()
-        .map(|result| result.expect("the order lists every item"))
-        .collect()
+
+    /// [`map`] that starts the items in `order`, a permutation of their indices,
+    /// each on the next free worker, with the results in item order. Starting
+    /// the costliest items first keeps the slowest from running alone at the end.
+    pub(crate) fn map_in_order<T: Sync, R: Send>(
+        items: &[T],
+        order: &[usize],
+        work: impl Fn(&T) -> R + Sync,
+    ) -> Vec<R> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        debug_assert_eq!(order.len(), items.len(), "the order lists every item");
+        let next = AtomicUsize::new(0);
+        // A puller per worker takes the next item in `order` until none is
+        // left; one a busy worker never starts finds none left.
+        let pullers = rayon::current_num_threads().min(order.len());
+        let done: Vec<Vec<(usize, R)>> = (0..pullers)
+            .into_par_iter()
+            .with_max_len(1)
+            .map(|_| {
+                let mut done = Vec::new();
+                while let Some(&index) = order.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    done.push((index, work(&items[index])));
+                }
+                done
+            })
+            .collect();
+        let mut results: Vec<Option<R>> = items.iter().map(|_| None).collect();
+        for (index, result) in done.into_iter().flatten() {
+            results[index] = Some(result);
+        }
+        results
+            .into_iter()
+            .map(|result| result.expect("the order lists every item"))
+            .collect()
+    }
+
+    /// [`map`] with scratch: each worker takes its own clone of `init` and keeps
+    /// it across the items it takes, so `work` may cache in it answers that do
+    /// not depend on the item.
+    pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
+        items: &[T],
+        init: S,
+        work: impl Fn(&mut S, &T) -> R + Sync,
+    ) -> Vec<R> {
+        items
+            .par_iter()
+            .map_with(init, |scratch, item| work(scratch, item))
+            .collect()
+    }
+
+    /// The indices below `len` that `keep` selects, in ascending order.
+    pub(crate) fn select_indices(len: usize, keep: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
+        (0..len)
+            .into_par_iter()
+            .filter(|&index| keep(index))
+            .collect()
+    }
+
+    /// `pick`'s answers for the indices below `len` it answers, in ascending
+    /// index order.
+    pub(crate) fn filter_map_indices<R: Send>(
+        len: usize,
+        pick: impl Fn(usize) -> Option<R> + Sync,
+    ) -> Vec<R> {
+        // A shared reference to a `Sync` closure is `Send`.
+        (0..len).into_par_iter().filter_map(&pick).collect()
+    }
+
+    /// `work` on every item in place.
+    pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Sync) {
+        items.par_iter_mut().for_each(&work);
+    }
+
+    /// Whether `test` holds for any index below `len`.
+    pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool {
+        (0..len).into_par_iter().any(&test)
+    }
+
+    /// Run `pooled` on the worker pool while `here` runs on this thread, and
+    /// return once both are done. Only `pooled` crosses threads, so `here` may
+    /// hold this thread's `&mut` borrows and read its thread-locals. A panic in
+    /// either resumes on the caller.
+    pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+        rayon::in_place_scope(|scope| {
+            scope.spawn(move |_| pooled());
+            here();
+        });
+    }
 }
 
-/// [`map`] with scratch: each worker takes its own clone of `init` and keeps
-/// it across the items it takes, so `work` may cache in it answers that do
-/// not depend on the item.
-pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
-    items: &[T],
-    init: S,
-    work: impl Fn(&mut S, &T) -> R + Sync,
-) -> Vec<R> {
-    items
-        .par_iter()
-        .map_with(init, |scratch, item| work(scratch, item))
-        .collect()
-}
+#[cfg(target_arch = "wasm32")]
+mod sequential {
+    pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+        items.iter().map(work).collect()
+    }
 
-/// The indices below `len` that `keep` selects, in ascending order.
-pub(crate) fn select_indices(len: usize, keep: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
-    (0..len)
-        .into_par_iter()
-        .filter(|&index| keep(index))
-        .collect()
-}
+    pub(crate) fn map_in_order<T: Sync, R: Send>(
+        items: &[T],
+        order: &[usize],
+        work: impl Fn(&T) -> R + Sync,
+    ) -> Vec<R> {
+        debug_assert_eq!(order.len(), items.len(), "the order lists every item");
+        items.iter().map(work).collect()
+    }
 
-/// `pick`'s answers for the indices below `len` it answers, in ascending
-/// index order.
-pub(crate) fn filter_map_indices<R: Send>(
-    len: usize,
-    pick: impl Fn(usize) -> Option<R> + Sync,
-) -> Vec<R> {
-    // A shared reference to a `Sync` closure is `Send`.
-    (0..len).into_par_iter().filter_map(&pick).collect()
-}
+    pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
+        items: &[T],
+        init: S,
+        work: impl Fn(&mut S, &T) -> R + Sync,
+    ) -> Vec<R> {
+        let mut scratch = init;
+        items.iter().map(|item| work(&mut scratch, item)).collect()
+    }
 
-/// `work` on every item in place.
-pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Sync) {
-    items.par_iter_mut().for_each(&work);
-}
+    pub(crate) fn select_indices(len: usize, keep: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
+        (0..len).filter(|&index| keep(index)).collect()
+    }
 
-/// Whether `test` holds for any index below `len`.
-pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool {
-    (0..len).into_par_iter().any(&test)
-}
+    pub(crate) fn filter_map_indices<R: Send>(
+        len: usize,
+        pick: impl Fn(usize) -> Option<R> + Sync,
+    ) -> Vec<R> {
+        (0..len).filter_map(pick).collect()
+    }
 
-/// Run `pooled` on the worker pool while `here` runs on this thread, and
-/// return once both are done. Only `pooled` crosses threads, so `here` may
-/// hold this thread's `&mut` borrows and read its thread-locals. A panic in
-/// either resumes on the caller.
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
-    rayon::in_place_scope(|scope| {
-        scope.spawn(move |_| pooled());
+    pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Sync) {
+        items.iter_mut().for_each(work);
+    }
+
+    pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool {
+        (0..len).any(test)
+    }
+
+    pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+        pooled();
         here();
-    });
+    }
 }
 
 #[cfg(test)]

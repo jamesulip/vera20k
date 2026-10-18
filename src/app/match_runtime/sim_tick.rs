@@ -85,8 +85,8 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
         .sim_runtime
         .as_ref()
         .map_or(0, |rt| rt.simulation.session.tick);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     (session_tick, now)

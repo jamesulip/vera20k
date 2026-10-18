@@ -35,6 +35,7 @@ test-support = []
 
 [dependencies]
 glam = { workspace = true }
+web-time = { workspace = true }
 # Fixed-point arithmetic for simulation positions and other fixed-width mechanisms.
 # Native floating-point mechanisms document their numeric contract at their owner.
 fixed = { version = "1", features = ["serde"] }

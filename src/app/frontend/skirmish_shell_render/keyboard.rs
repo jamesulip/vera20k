@@ -23,7 +23,7 @@ use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardParent};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
-use std::time::Instant;
+use web_time::Instant;
 
 /// Original61E700 group and6208F0 plain frames both use two bevel rings and
 /// averaged mixed corners. A group's top edge leaves the native caption gap.

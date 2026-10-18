@@ -60,6 +60,14 @@ pub(crate) fn wall_clock_ms() -> u64 {
         let sample = unsafe { sample.assume_init() };
         (sample.tv_sec as u64) * 1_000 + (sample.tv_nsec as u64) / 1_000_000
     }
+    // Browsers expose no uptime counter; Date.now() keeps counting across
+    // page reloads, which is the continuity the consumers above rely on.
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as u64)
+    }
 }
 
 #[derive(Debug, Default)]

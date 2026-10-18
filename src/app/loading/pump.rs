@@ -1278,7 +1278,7 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
 /// file omits the preview layer; every other layer still draws.
 fn decode_random_map_loading_preview(ra2_dir: &Path) -> Option<DecodedPreview> {
     let path = ra2_dir.join(RANDOM_MAP_PREVIEW_FILE);
-    let bytes = match std::fs::read(&path) {
+    let bytes = match crate::util::vfs::read(&path) {
         Ok(bytes) => bytes,
         Err(err) => {
             log::warn!(

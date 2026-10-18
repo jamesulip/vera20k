@@ -13,7 +13,7 @@
 //! - App layer; depends only on std. No render/sim/audio type deps (the app maps
 //!   directives onto MusicPlayer/SfxPlayer), so it stays headless-testable.
 
-use std::time::Instant;
+use web_time::Instant;
 
 /// Music volume-fade rate: full scale (1.0) over 1000 ms, matching the original's
 /// theme stop-with-fade (a full-scale volume interpolator over a 1000 ms divisor).

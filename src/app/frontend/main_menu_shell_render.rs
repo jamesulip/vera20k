@@ -1,7 +1,7 @@
 //! Initial main-menu shell render glue for dialog 0xE2.
 
 use std::sync::Arc;
-use std::time::Instant;
+use web_time::Instant;
 
 use anyhow::Result;
 
@@ -27,12 +27,12 @@ use crate::ui::main_menu_shell::{
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, ShellScale};
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
 
-/// Archive holding the Red Alert 2 shell loop.
+/// Archive holding the shell loop. Local change: show the Yuri's Revenge loop.
 ///
-/// `ra2ts_l.bik` / `ra2ts_s.bik` exist under identical names in both this archive
-/// and `langmd.mix` (Yuri's Revenge). Normal mount priority resolves the Yuri copy,
-/// so the shell loader asks for this one by name instead.
-const RA2_SHELL_MOVIE_ARCHIVE: &str = "language.mix";
+/// `ra2ts_l.bik` / `ra2ts_s.bik` exist under identical names in both `language.mix`
+/// (Red Alert 2) and `langmd.mix` (Yuri's Revenge). Upstream asks for the Red Alert 2
+/// copy by name; this checkout asks for the Yuri's Revenge copy instead.
+const RA2_SHELL_MOVIE_ARCHIVE: &str = "langmd.mix";
 
 /// Dialog 0xE2 owner-draw button policy: the SDBTNANM frame fills its 156x42
 /// cell, right-anchored and vertically centred, so a stretched cell stretches

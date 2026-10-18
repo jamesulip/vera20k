@@ -3969,7 +3969,7 @@ fn scale_benchmark_many_movers_on_hills() {
     let mut worst = std::time::Duration::ZERO;
     for frame in 0..frames {
         let batch = if frame == 0 { commands.as_slice() } else { &[] };
-        let started = std::time::Instant::now();
+        let started = web_time::Instant::now();
         scenario
             .runtime
             .advance_frame(batch, SIM_TICK_MS, TickLane::Ordinary, crate::sim::world::FrameEffects::default())

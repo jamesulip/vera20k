@@ -10,15 +10,15 @@ fn path(root: &Path) -> PathBuf {
         .unwrap_or_else(|| root.join("KeyboardMD.ini"))
 }
 pub(crate) fn reload(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
-    let bytes = std::fs::read(path(root)).ok();
+    let bytes = crate::util::vfs::read(path(root)).ok();
     HotkeyBindings::reload_from_ini_bytes(bytes.as_deref().or(archive))
 }
 pub(crate) fn save(root: &Path, bindings: &HotkeyBindings) -> std::io::Result<()> {
-    std::fs::write(path(root), bindings.to_ini_string())
+    crate::util::vfs::write(path(root), bindings.to_ini_string())
 }
 pub(crate) fn reset(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
     // Native delete failure has no dialog: reload whatever file remains.
-    if let Err(error) = std::fs::remove_file(path(root))
+    if let Err(error) = crate::util::vfs::remove(path(root))
         && error.kind() != std::io::ErrorKind::NotFound
     {
         log::warn!("Could not reset KeyboardMD.ini: {error}");

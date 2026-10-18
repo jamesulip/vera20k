@@ -7,6 +7,17 @@
 use std::path::{Path, PathBuf};
 
 /// The entry in `directory` whose name equals `name`, ignoring ASCII case.
+#[cfg(target_arch = "wasm32")]
+pub fn find(directory: &Path, name: &str) -> Option<PathBuf> {
+    crate::util::vfs::list(directory)
+        .ok()?
+        .into_iter()
+        .find(|entry| entry.name.eq_ignore_ascii_case(name))
+        .map(|entry| directory.join(entry.name))
+}
+
+/// The entry in `directory` whose name equals `name`, ignoring ASCII case.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn find(directory: &Path, name: &str) -> Option<PathBuf> {
     std::fs::read_dir(directory)
         .ok()?

@@ -2339,7 +2339,7 @@ pub(crate) fn load_map_initial_with_assets(
         let mut options = crate::map::rmg::RmgOptions::default();
         let seed_path = ra2_dir.join(seed_name);
         let mut seed_source = None;
-        match std::fs::read(&seed_path) {
+        match crate::util::vfs::read(&seed_path) {
             Ok(bytes) => {
                 seed_source = Some(
                     crate::map::source::GeneratedSeedSource::from_consumed_bytes(seed_path, &bytes),
