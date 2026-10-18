@@ -6238,7 +6238,6 @@ impl RuleSet {
     }
 
     /// Resolve a particle type name to its ID (case-insensitive).
-    #[cfg(any(test, feature = "test-support"))]
     pub fn p_type_id_by_name(&self, name: &str) -> Option<ParticleTypeId> {
         self.particle_types
             .iter()
