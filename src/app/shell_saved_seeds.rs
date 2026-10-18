@@ -48,7 +48,7 @@ impl App {
             entries,
             current,
             empty.into(),
-            saved_seeds::new_slot_file_time(std::time::SystemTime::now()),
+            saved_seeds::new_slot_file_time(web_time::SystemTime::now()),
             rows,
         ));
         state.frontend.skirmish_shell_state.player_name_edit.focused = false;

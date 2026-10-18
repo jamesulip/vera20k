@@ -200,17 +200,31 @@ impl GpuContext {
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
+        // Browser canvases offer no sRGB format, but a unorm canvas accepts
+        // sRGB views. Renderers target `surface_format`; the canvas holds the
+        // same bytes in its unorm twin, and copies may differ only in sRGB-ness.
+        #[cfg(target_arch = "wasm32")]
+        let (canvas_format, surface_format) = (
+            surface_format.remove_srgb_suffix(),
+            surface_format.add_srgb_suffix(),
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        let canvas_format = surface_format;
 
         // Configure the surface with our chosen format and the window's current size.
         let window_size: winit::dpi::PhysicalSize<u32> = window.inner_size();
         let config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: required_surface_usages,
-            format: surface_format,
+            format: canvas_format,
             width: window_size.width.max(1), // wgpu panics on 0-sized surfaces
             height: window_size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: if canvas_format == surface_format {
+                vec![]
+            } else {
+                vec![surface_format]
+            },
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);

@@ -1502,8 +1502,8 @@ mod tests {
 
     #[test]
     fn gsi_04_12_preview_file_is_teardown_owned_and_precedes_accepted_commit() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let unique = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
         let base = std::env::temp_dir().join(format!(

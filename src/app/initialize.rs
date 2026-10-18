@@ -115,6 +115,7 @@ impl App {
         event_loop: &ActiveEventLoop,
         capture_dimensions: Option<(u32, u32)>,
         startup_options: RetailStartupOptions,
+        prepared_surface: Option<(Arc<Window>, GpuContext)>,
     ) -> Result<AppState> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -178,7 +179,10 @@ impl App {
         if let Some(icon) = &retail_icon {
             window_attrs = icon.apply(window_attrs);
         }
-        let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
+        let (window, prepared_gpu): (Arc<Window>, Option<GpuContext>) = match prepared_surface {
+            Some((window, gpu)) => (window, Some(gpu)),
+            None => (Arc::new(event_loop.create_window(window_attrs)?), None),
+        };
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides
         // the cursor, before the startup splash; from the first frame after it,
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
@@ -187,7 +191,10 @@ impl App {
         if let Some(icon) = &retail_icon {
             icon.set_dock_icon();
         }
-        let gpu: GpuContext = GpuContext::new(window.clone())?;
+        let gpu: GpuContext = match prepared_gpu {
+            Some(gpu) => gpu,
+            None => GpuContext::new(window.clone())?,
+        };
         #[cfg(feature = "dev-ui")]
         let debug_ui = EguiIntegration::new(&gpu, &window);
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);

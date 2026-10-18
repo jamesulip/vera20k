@@ -201,7 +201,12 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        match Self::initialize(event_loop, capture_dimensions, self.startup_options) {
+        match Self::initialize(
+            event_loop,
+            capture_dimensions,
+            self.startup_options,
+            self.prepared_surface.take(),
+        ) {
             Ok(mut state) => {
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.prepare_state(&mut state);

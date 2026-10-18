@@ -10,6 +10,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+/// The install directory as the engine names it; its files resolve from here.
+pub const WEB_RA2_DIR: &str = "/ra2";
+
 static FILES: OnceLock<HashMap<String, Arc<[u8]>>> = OnceLock::new();
 
 /// Install the player's files, keyed by file name. Later calls are ignored.

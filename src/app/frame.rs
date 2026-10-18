@@ -294,7 +294,12 @@ impl App {
             .surface
             .get_current_texture()
             .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?;
-        let view: wgpu::TextureView = output.texture.create_view(&Default::default());
+        // Name the format: in the browser the canvas is unorm and this view is
+        // its sRGB twin, which is what the renderers target.
+        let view: wgpu::TextureView = output.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(state.renderer.gpu.surface_format),
+            ..Default::default()
+        });
         let mut encoder: wgpu::CommandEncoder =
             state
                 .renderer

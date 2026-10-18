@@ -218,7 +218,7 @@ impl App {
             entries,
             current.into(),
             empty.into(),
-            crate::map::rmg::saved_seeds::new_slot_file_time(std::time::SystemTime::now()),
+            crate::map::rmg::saved_seeds::new_slot_file_time(web_time::SystemTime::now()),
             visible_rows,
         )
     }

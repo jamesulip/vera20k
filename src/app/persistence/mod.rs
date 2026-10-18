@@ -650,9 +650,7 @@ impl SaveRepository {
                 }
                 let bytes = self.read(&path).ok()?;
                 let header = GameSnapshot::read_metadata(&bytes).ok()?;
-                let ticks = crate::map::rmg::saved_seeds::system_time_to_file_time(
-                    metadata.modified().ok()?,
-                );
+                let ticks = crate::map::rmg::saved_seeds::modified_file_time(&metadata)?;
                 Some((SaveEntry { path, header }, ticks))
             })
     }
@@ -1000,8 +998,8 @@ mod tests {
         std::env::temp_dir().join(format!(
             "vera20k-{label}-{}-{}",
             std::process::id(),
-            SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
                 .expect("system time after Unix epoch")
                 .as_nanos(),
         ))

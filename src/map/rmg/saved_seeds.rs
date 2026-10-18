@@ -139,10 +139,7 @@ fn enumerate_seed_files(dir: &Path) -> Vec<(NativeFileName, u32, u64)> {
             Some((
                 name.into(),
                 0,
-                metadata
-                    .modified()
-                    .map(system_time_to_file_time)
-                    .unwrap_or_default(),
+                modified_file_time(&metadata).unwrap_or_default(),
             ))
         })
         .collect()
@@ -167,9 +164,19 @@ pub fn write_browser_seed(
     native_file_name::open(dir, name, true)?.write_all(&options.to_sed_bytes())
 }
 
-pub fn system_time_to_file_time(time: std::time::SystemTime) -> u64 {
+/// A file's modification time as FILETIME ticks.
+pub fn modified_file_time(metadata: &std::fs::Metadata) -> Option<u64> {
+    let modified = metadata.modified().ok()?;
+    // Filesystem times are std's; on wasm32 web_time's SystemTime is a
+    // distinct type (and wasm32 has no filesystem times to report anyway).
+    #[cfg(target_arch = "wasm32")]
+    let modified = web_time::UNIX_EPOCH + modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(system_time_to_file_time(modified))
+}
+
+pub fn system_time_to_file_time(time: web_time::SystemTime) -> u64 {
     const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
-    match time.duration_since(std::time::UNIX_EPOCH) {
+    match time.duration_since(web_time::UNIX_EPOCH) {
         Ok(duration) => UNIX_EPOCH_TICKS
             .saturating_add(u64::try_from(duration.as_nanos() / 100).unwrap_or(u64::MAX)),
         Err(before) => UNIX_EPOCH_TICKS
@@ -179,7 +186,7 @@ pub fn system_time_to_file_time(time: std::time::SystemTime) -> u64 {
 
 /// New's synthetic timestamp comes from GetSystemTime, which has millisecond
 /// fields (0x00559806), while file metadata retains full FILETIME precision.
-pub fn new_slot_file_time(time: std::time::SystemTime) -> u64 {
+pub fn new_slot_file_time(time: web_time::SystemTime) -> u64 {
     let ticks = system_time_to_file_time(time);
     ticks - ticks % 10_000
 }
@@ -262,8 +269,8 @@ mod tests {
         let path = std::env::temp_dir().join(format!(
             "vera20k-seed-description-{}-{}.sed",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
@@ -315,8 +322,8 @@ mod tests {
         let path = std::env::temp_dir().join(format!(
             "vera20k-partial-seed-{}-{}.sed",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));

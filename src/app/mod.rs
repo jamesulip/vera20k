@@ -84,6 +84,10 @@ pub struct App {
     /// Retained until `resumed()` so the profile's pre-window Video read can
     /// use the command-line screen fields as its current-value defaults.
     startup_options: crate::app::frontend::startup_options::RetailStartupOptions,
+    /// A window and GPU made before `resumed()`. The browser must request its
+    /// GPU asynchronously, so the web entry point prepares both and hands them
+    /// over; native startup creates its own.
+    prepared_surface: Option<(Arc<Window>, GpuContext)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +132,7 @@ impl App {
             shell_capture: None,
             tactical_capture: None,
             startup_options,
+            prepared_surface: None,
         }
     }
 
@@ -141,6 +146,7 @@ impl App {
             ),
             tactical_capture: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
+            prepared_surface: None,
         }
     }
 
@@ -156,7 +162,15 @@ impl App {
                 ),
             ),
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
+            prepared_surface: None,
         }
+    }
+
+    /// Start with a window and GPU that already exist instead of creating them.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn with_prepared_surface(mut self, window: Arc<Window>, gpu: GpuContext) -> Self {
+        self.prepared_surface = Some((window, gpu));
+        self
     }
 
     pub fn finish_capture(&mut self) -> Result<()> {

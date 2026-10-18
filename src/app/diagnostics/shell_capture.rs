@@ -1842,8 +1842,8 @@ mod tests {
     }
 
     fn new_output_path(tag: &str) -> PathBuf {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let unique = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
         std::env::temp_dir().join(format!(
