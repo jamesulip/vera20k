@@ -19,6 +19,8 @@
              border-radius: 6px; background: #1b1f27; color: #e8e8e8; font: inherit; cursor: pointer; }
     button:hover, label.button:hover { background: #262b36; }
     #start { font-size: 18px; padding: 12px 24px; }
+    body.running #forget { opacity: 0.35; }
+    body.running #forget:hover { opacity: 1; }
     #forget { position: fixed; bottom: 8px; right: 8px; font-size: 12px; padding: 4px 8px; }
     progress { width: 100%; }
   </style>
@@ -102,10 +104,19 @@
         throw new Error("That folder is missing " + missing.join(", ") +
                         ". Pick the installed Yuri's Revenge folder.");
       }
+      const total = picked.reduce((sum, f) => sum + f.size, 0);
+      // The old copy is replaced, so its space counts as free.
+      const { quota = Infinity, usage = 0 } = await navigator.storage.estimate();
+      const replaced = ((await readManifest()) || []).reduce((sum, e) => sum + e.size, 0);
+      if (quota - usage + replaced < total) {
+        const gb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : Math.round(n / 1e6) + " MB";
+        throw new Error(`Not enough browser storage: the game needs ${gb(total)}, ` +
+                        `this browser allows ${gb(quota - usage + replaced)}. ` +
+                        "Free up disk space and try again.");
+      }
       const root = await navigator.storage.getDirectory();
       await root.removeEntry(STORE, { recursive: true }).catch(() => {});
       const dir = await storeDir(true);
-      const total = picked.reduce((sum, f) => sum + f.size, 0);
       const progress = document.getElementById("copy-progress");
       const text = document.getElementById("copy-text");
       document.getElementById("copy").hidden = false;
@@ -114,8 +125,17 @@
         text.textContent = `Copying ${file.name}…`;
         const handle = await dir.getFileHandle(file.name.toLowerCase(), { create: true });
         const writable = await handle.createWritable();
-        await writable.write(file);
-        await writable.close();
+        try {
+          await writable.write(file);
+          await writable.close();
+        } catch (err) {
+          await writable.abort().catch(() => {});
+          if (err.name === "QuotaExceededError") {
+            throw new Error("The browser ran out of storage while copying " + file.name +
+                            ". Free up disk space and pick the folder again.");
+          }
+          throw err;
+        }
         done += file.size;
         progress.value = done / total;
       }
@@ -125,10 +145,30 @@
       await out.close();
     }
 
+    // While the game runs, closing or reloading the tab asks first: a match
+    // would be lost, and a save may still be on its way to storage.
+    function confirmLeave(event) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
     async function startEngine() {
       setup.hidden = true;
       forget.hidden = false;
       status.textContent = "Starting VERA20k…";
+      document.body.classList.add("running");
+      addEventListener("beforeunload", confirmLeave);
+      // Right-click is a game command; never open the browser's menu over it.
+      document.addEventListener("contextmenu", (event) => {
+        if (event.target instanceof HTMLCanvasElement) event.preventDefault();
+      });
+      // An engine panic stops the game; say so instead of leaving a frozen canvas.
+      addEventListener("error", (event) => {
+        if (String(event.message).includes("Using exceptions for control flow")) return;
+        status.textContent = "VERA20k stopped: " + event.message +
+          ". Reload the page to start again; details are in the browser console.";
+        removeEventListener("beforeunload", confirmLeave);
+      });
       try {
         const { default: init } = await import("./pkg/vera20k.js");
         await init();
@@ -143,6 +183,11 @@
     }
 
     forget.addEventListener("click", async () => {
+      if (!confirm("Delete the game files from this browser? You will need to pick " +
+                   "your Yuri's Revenge folder again, and saved games are deleted too.")) {
+        return;
+      }
+      removeEventListener("beforeunload", confirmLeave);
       const root = await navigator.storage.getDirectory();
       await root.removeEntry(STORE, { recursive: true }).catch(() => {});
       location.reload();

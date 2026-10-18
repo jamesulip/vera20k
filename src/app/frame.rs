@@ -666,6 +666,15 @@ impl App {
         };
         let retail_screenshot_current_frame =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
+        // The readback below blocks until the GPU maps the copy, and a browser
+        // only maps it after this frame returns: it would never finish there.
+        #[cfg(target_arch = "wasm32")]
+        let retail_screenshot_current_frame = {
+            if retail_screenshot_current_frame {
+                log::info!("Screenshots are not available in the browser build yet");
+            }
+            false
+        };
         let pending_retail_screenshot = state
             .renderer
             .retail_screenshot_frame_cache
