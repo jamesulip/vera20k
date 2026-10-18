@@ -188,7 +188,7 @@ impl RetailOptionsLoad {
     /// [`Self::without_ra2md`] so user profile state cannot contaminate sealed
     /// capture output.
     pub(crate) fn from_ra2md(ra2_dir: &Path, startup: &RetailStartupOptions) -> Self {
-        Self::from_ra2md_with(ra2_dir, startup, |path| std::fs::read(path))
+        Self::from_ra2md_with(ra2_dir, startup, |path| crate::util::vfs::read(path))
     }
 
     /// Injectable form of [`Self::from_ra2md`] used to prove that both
@@ -457,8 +457,8 @@ impl RetailOptionsProfile {
     pub(crate) fn commit_ra2md(&self, ra2_dir: &Path) -> io::Result<()> {
         self.commit_ra2md_with(
             ra2_dir,
-            |path| std::fs::read(path),
-            |path, bytes| std::fs::write(path, bytes),
+            |path| crate::util::vfs::read(path),
+            |path, bytes| crate::util::vfs::write(path, bytes),
         )
     }
 

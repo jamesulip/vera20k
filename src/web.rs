@@ -6,6 +6,7 @@
 //! starts the real app with that window and GPU and forwards events to it.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -138,6 +139,7 @@ impl ApplicationHandler<WebEvent> for WebApp {
         if let Some(app) = &mut self.app {
             app.about_to_wait(event_loop);
         }
+        persist_written_files();
     }
 
     fn exiting(&mut self, event_loop: &ActiveEventLoop) {
@@ -155,28 +157,148 @@ async fn read_game_files() -> Result<Vec<(String, Vec<u8>)>, JsValue> {
             .await?
             .dyn_into()?;
     let store: web_sys::FileSystemDirectoryHandle =
-        JsFuture::from(root.get_directory_handle(STORE)).await?.dyn_into()?;
+        JsFuture::from(root.get_directory_handle(STORE))
+            .await?
+            .dyn_into()?;
 
     let manifest = read_file(&store, MANIFEST).await?;
     let manifest = String::from_utf8(manifest).map_err(|err| err.to_string())?;
     let entries: js_sys::Array = js_sys::JSON::parse(&manifest)?.dyn_into()?;
     let names: Vec<String> = entries
         .iter()
-        .filter_map(|entry| js_sys::Reflect::get(&entry, &"name".into()).ok()?.as_string())
+        .filter_map(|entry| {
+            js_sys::Reflect::get(&entry, &"name".into())
+                .ok()?
+                .as_string()
+        })
         .collect();
 
     let mut files = Vec::with_capacity(names.len());
     for (index, name) in names.iter().enumerate() {
-        set_status(&format!("Reading game files {}/{}: {name}", index + 1, names.len()));
+        set_status(&format!(
+            "Reading game files {}/{}: {name}",
+            index + 1,
+            names.len()
+        ));
         let bytes = read_file(&store, name).await?;
-        files.push((name.clone(), bytes));
+        files.push((decode_store_name(name), bytes));
     }
     Ok(files)
 }
 
-async fn read_file(store: &web_sys::FileSystemDirectoryHandle, name: &str) -> Result<Vec<u8>, JsValue> {
+/// Set while a background save to browser storage is running.
+static PERSISTING: AtomicBool = AtomicBool::new(false);
+
+/// Copy files the game wrote (options, saves) to browser storage, so they
+/// load with the install next time. Runs one batch at a time in the
+/// background; files written meanwhile wait for the next frame.
+fn persist_written_files() {
+    if PERSISTING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let changed = vera20k_core::assets::web_files::take_dirty();
+    if changed.is_empty() {
+        PERSISTING.store(false, Ordering::Release);
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(err) = write_to_store(&changed).await {
+            log::error!(
+                "Could not save to browser storage: {}",
+                describe_js_error(err)
+            );
+        } else {
+            log::info!("Saved {} file(s) to browser storage", changed.len());
+        }
+        PERSISTING.store(false, Ordering::Release);
+    });
+}
+
+async fn write_to_store(changed: &[(String, Option<Arc<[u8]>>)]) -> Result<(), JsValue> {
+    let window = web_sys::window().ok_or("no browser window")?;
+    let root: web_sys::FileSystemDirectoryHandle =
+        JsFuture::from(window.navigator().storage().get_directory())
+            .await?
+            .dyn_into()?;
+    let store: web_sys::FileSystemDirectoryHandle =
+        JsFuture::from(root.get_directory_handle(STORE))
+            .await?
+            .dyn_into()?;
+
+    let manifest =
+        String::from_utf8(read_file(&store, MANIFEST).await?).map_err(|err| err.to_string())?;
+    let entries: js_sys::Array = js_sys::JSON::parse(&manifest)?.dyn_into()?;
+    let mut kept: Vec<js_sys::Object> = entries
+        .iter()
+        .filter_map(|entry| entry.dyn_into::<js_sys::Object>().ok())
+        .collect();
+
+    for (key, bytes) in changed {
+        let name = encode_store_name(key);
+        kept.retain(|entry| {
+            js_sys::Reflect::get(entry, &"name".into())
+                .ok()
+                .and_then(|value| value.as_string())
+                .is_none_or(|existing| existing != name)
+        });
+        match bytes {
+            Some(bytes) => {
+                write_file(&store, &name, bytes).await?;
+                let entry = js_sys::Object::new();
+                js_sys::Reflect::set(&entry, &"name".into(), &name.as_str().into())?;
+                js_sys::Reflect::set(&entry, &"size".into(), &(bytes.len() as f64).into())?;
+                kept.push(entry);
+            }
+            None => {
+                let _ = JsFuture::from(store.remove_entry(&name)).await;
+            }
+        }
+    }
+
+    let manifest: js_sys::Array = kept.into_iter().collect();
+    let text = js_sys::JSON::stringify(&manifest)?
+        .as_string()
+        .ok_or("manifest did not serialize")?;
+    write_file(&store, MANIFEST, text.as_bytes()).await
+}
+
+async fn write_file(
+    store: &web_sys::FileSystemDirectoryHandle,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(), JsValue> {
+    let options = web_sys::FileSystemGetFileOptions::new();
+    options.set_create(true);
     let handle: web_sys::FileSystemFileHandle =
-        JsFuture::from(store.get_file_handle(name)).await?.dyn_into()?;
+        JsFuture::from(store.get_file_handle_with_options(name, &options))
+            .await?
+            .dyn_into()?;
+    let writable: web_sys::FileSystemWritableFileStream =
+        JsFuture::from(handle.create_writable()).await?.dyn_into()?;
+    JsFuture::from(writable.write_with_u8_array(bytes)?).await?;
+    JsFuture::from(writable.close()).await?;
+    Ok(())
+}
+
+/// Browser storage folders hold flat names, so a file below the install
+/// directory (`saved games/x.sav`) is stored with its separators escaped.
+fn encode_store_name(key: &str) -> String {
+    key.replace('%', "%25").replace('/', "%2F")
+}
+
+fn decode_store_name(name: &str) -> String {
+    name.replace("%2F", "/")
+        .replace("%2f", "/")
+        .replace("%25", "%")
+}
+
+async fn read_file(
+    store: &web_sys::FileSystemDirectoryHandle,
+    name: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let handle: web_sys::FileSystemFileHandle = JsFuture::from(store.get_file_handle(name))
+        .await?
+        .dyn_into()?;
     let file: web_sys::File = JsFuture::from(handle.get_file()).await?.dyn_into()?;
     let buffer = JsFuture::from(file.array_buffer()).await?;
     Ok(js_sys::Uint8Array::new(&buffer).to_vec())

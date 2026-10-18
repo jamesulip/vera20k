@@ -122,7 +122,8 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3.91"
 web-sys = { version = "0.3.91", features = [
     "Blob", "Document", "Element", "File", "FileSystemDirectoryHandle",
-    "FileSystemFileHandle", "Navigator", "StorageManager", "Window",
+    "FileSystemFileHandle", "FileSystemGetFileOptions", "FileSystemWritableFileStream",
+    "Navigator", "StorageManager", "WritableStream", "Window",
 ] }
 console_error_panic_hook = "0.1"
 console_log = "1"

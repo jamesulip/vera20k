@@ -180,7 +180,12 @@ impl App {
             window_attrs = icon.apply(window_attrs);
         }
         let (window, prepared_gpu): (Arc<Window>, Option<GpuContext>) = match prepared_surface {
-            Some((window, gpu)) => (window, Some(gpu)),
+            Some((window, gpu)) => {
+                // A prepared window predates the profile read; give it the
+                // size native creation would have. The resize re-fits the surface.
+                let _ = window.request_inner_size(inner_size);
+                (window, Some(gpu))
+            }
             None => (Arc::new(event_loop.create_window(window_attrs)?), None),
         };
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides

@@ -16,10 +16,10 @@ mod resource_load;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
 use std::path::{Path, PathBuf};
-#[cfg(any(feature = "dev-ui", test))]
-use web_time::Instant;
 #[cfg(any(feature = "dev-overlays", test))]
 use std::time::SystemTime;
+#[cfg(any(feature = "dev-ui", test))]
+use web_time::Instant;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -451,6 +451,8 @@ impl SaveListCache {
 #[cfg(any(feature = "dev-overlays", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SaveWriteStage {
+    // The browser build keeps saves in memory and never creates a folder.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     CreateDirectory,
     WriteFile,
 }
@@ -514,9 +516,29 @@ impl SaveRepository {
     }
 
     pub(crate) fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
-        std::fs::read(path)
+        crate::util::vfs::read(path)
     }
 
+    /// The browser keeps saves in memory and browser storage: a new save
+    /// still refuses to replace an existing one.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn write_named(
+        &self,
+        file_name: &str,
+        bytes: &[u8],
+    ) -> Result<PathBuf, SaveWriteError> {
+        let path = self.directory.join(file_name);
+        if crate::util::vfs::exists(&path) {
+            return Err(SaveWriteError::write_file(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "a save with this name already exists",
+            )));
+        }
+        crate::util::vfs::write(&path, bytes).map_err(SaveWriteError::write_file)?;
+        Ok(path)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn write_named(
         &self,
         file_name: &str,
@@ -534,6 +556,7 @@ impl SaveRepository {
 
     /// New saves may not silently replace a timestamp-name collision. Remove
     /// only our newly created partial file if writing fails.
+    #[cfg(not(target_arch = "wasm32"))]
     fn create_new_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
         use std::io::Write;
         let mut file = std::fs::OpenOptions::new()
@@ -566,31 +589,41 @@ impl SaveRepository {
         GameSnapshot::read_header(&previous).map_err(|error| {
             SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
         })?;
-        static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let stage = loop {
-            let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stage = self
-                .directory
-                .join(format!(".save-{}-{id}.tmp", std::process::id()));
-            match self.create_new_file(&stage, bytes) {
-                Ok(()) => break stage,
-                Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        };
-        let result = std::fs::rename(&stage, path);
-        if result.is_err() {
-            let _ = std::fs::remove_file(&stage);
+        // In-memory replacement is already all-or-nothing; no stage file.
+        #[cfg(target_arch = "wasm32")]
+        {
+            crate::util::vfs::write(path, bytes).map_err(SaveWriteError::write_file)
         }
-        result.map_err(SaveWriteError::write_file)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let stage = loop {
+                let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let stage = self
+                    .directory
+                    .join(format!(".save-{}-{id}.tmp", std::process::id()));
+                match self.create_new_file(&stage, bytes) {
+                    Ok(()) => break stage,
+                    Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
+            let result = std::fs::rename(&stage, path);
+            if result.is_err() {
+                let _ = std::fs::remove_file(&stage);
+            }
+            result.map_err(SaveWriteError::write_file)
+        }
     }
 
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {
-        std::fs::remove_file(path)
+        crate::util::vfs::remove(path)
     }
 
     pub(crate) fn exists(&self, path: &Path) -> bool {
-        path.exists()
+        crate::util::vfs::exists(path)
     }
 
     /// Panel policy: admit only valid snapshot headers and sort newest embedded
@@ -634,6 +667,28 @@ impl SaveRepository {
     }
 
     /// Saves whose header reads, with their file time, in directory order.
+    /// Browser storage keeps no file times, so a save's own timestamp stands in.
+    #[cfg(target_arch = "wasm32")]
+    fn readable_entries(&self) -> impl Iterator<Item = (SaveEntry, u64)> + '_ {
+        crate::util::vfs::list(&self.directory)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                let path = self.directory.join(&entry.name);
+                if path.extension().and_then(|extension| extension.to_str()) != Some("bin") {
+                    return None;
+                }
+                let bytes = self.read(&path).ok()?;
+                let header = GameSnapshot::read_metadata(&bytes).ok()?;
+                let saved =
+                    web_time::UNIX_EPOCH + std::time::Duration::from_secs(header.save_timestamp);
+                let ticks = crate::map::rmg::saved_seeds::system_time_to_file_time(saved);
+                Some((SaveEntry { path, header }, ticks))
+            })
+    }
+
+    /// Saves whose header reads, with their file time, in directory order.
+    #[cfg(not(target_arch = "wasm32"))]
     fn readable_entries(&self) -> impl Iterator<Item = (SaveEntry, u64)> + '_ {
         std::fs::read_dir(&self.directory)
             .into_iter()

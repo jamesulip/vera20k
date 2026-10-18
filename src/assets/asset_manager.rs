@@ -1136,14 +1136,15 @@ impl AssetManager {
     #[cfg(target_arch = "wasm32")]
     fn open_loose_root(ra2_dir: &Path) -> Result<HashMap<String, LooseAsset>, AssetError> {
         Ok(crate::assets::web_files::names()
+            .into_iter()
             .map(|name| {
-                let path = ra2_dir.join(name);
+                let path = ra2_dir.join(&name);
                 let asset = LooseAsset {
                     source_name: format!("loose:{}", path.display()),
                     path,
                     bytes: OnceLock::new(),
                 };
-                (name.to_owned(), asset)
+                (name, asset)
             })
             .collect())
     }

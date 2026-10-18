@@ -396,38 +396,44 @@ pub(super) fn spawn_random_map_generation_worker(
     map_storage_decision: RandomMapStorageDecision,
 ) -> std::io::Result<std::sync::mpsc::Receiver<RandomMapUpdate>> {
     let (sender, receiver) = std::sync::mpsc::channel();
+    let generate = move || {
+        map_storage_decision.apply_resize_to(&shared_cell_dummy);
+        // This receipt is ordered directly ahead of the call, on the same
+        // worker. It therefore proves a production generation entry even
+        // when the caller and worker use different test threads.
+        let _ = sender.send(RandomMapUpdate::Started);
+        let generated = crate::map::rmg::build::generate_map_observed(
+            &options,
+            &settings,
+            &resolved_inputs,
+            &blocks,
+            &tech_types,
+            // A closed receiver means the dialog went away; dropping
+            // what we produce is the correct outcome, not an error.
+            &mut |view| {
+                if !draws_preview(view.point()) {
+                    return;
+                }
+                let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
+            },
+        );
+        if generated.unfilled_start_slots > 0 {
+            log::warn!(
+                "Random map is short of spawns: {} start slot(s) could \
+                     not be filled; those players have no start position",
+                generated.unfilled_start_slots
+            );
+        }
+        let _ = sender.send(RandomMapUpdate::Finished(Box::new(generated)));
+    };
+    // Browsers cannot spawn threads: generate inline. Every update is already
+    // queued on the channel when the dialog next polls it.
+    #[cfg(target_arch = "wasm32")]
+    generate();
+    #[cfg(not(target_arch = "wasm32"))]
     std::thread::Builder::new()
         .name("random-map-generate".to_string())
-        .spawn(move || {
-            map_storage_decision.apply_resize_to(&shared_cell_dummy);
-            // This receipt is ordered directly ahead of the call, on the same
-            // worker. It therefore proves a production generation entry even
-            // when the caller and worker use different test threads.
-            let _ = sender.send(RandomMapUpdate::Started);
-            let generated = crate::map::rmg::build::generate_map_observed(
-                &options,
-                &settings,
-                &resolved_inputs,
-                &blocks,
-                &tech_types,
-                // A closed receiver means the dialog went away; dropping
-                // what we produce is the correct outcome, not an error.
-                &mut |view| {
-                    if !draws_preview(view.point()) {
-                        return;
-                    }
-                    let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
-                },
-            );
-            if generated.unfilled_start_slots > 0 {
-                log::warn!(
-                    "Random map is short of spawns: {} start slot(s) could \
-                     not be filled; those players have no start position",
-                    generated.unfilled_start_slots
-                );
-            }
-            let _ = sender.send(RandomMapUpdate::Finished(Box::new(generated)));
-        })?;
+        .spawn(generate)?;
     Ok(receiver)
 }
 
@@ -507,7 +513,7 @@ fn write_random_map_preview_to_dir(
     match crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb) {
         Ok(encoded) => {
             let path = ra2_dir.join(RANDMAP_PREVIEW_FILE);
-            if let Err(err) = std::fs::write(&path, encoded) {
+            if let Err(err) = crate::util::vfs::write(&path, encoded) {
                 log::warn!("random map: could not write {}: {err}", path.display());
             }
         }
@@ -1004,7 +1010,7 @@ impl App {
             .as_ref()
             .map(|config| config.paths.ra2_dir.clone())
             .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate the RA2 directory"))?;
-        std::fs::write(ra2_dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
+        crate::util::vfs::write(ra2_dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
 
         let description_text = options.description.display_text();
         let display = if options.description.is_empty() {

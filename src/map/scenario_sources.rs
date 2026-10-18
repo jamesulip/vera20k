@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::assets::asset_manager::{AssetManager, retail_enumerated_file};
+use crate::assets::asset_manager::AssetManager;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::assets::asset_manager::retail_enumerated_file;
 use crate::assets::csf_file::CsfFile;
 use crate::assets::mix_archive::MixArchive;
 use crate::map::preview::PreviewSection;
@@ -37,15 +39,7 @@ pub fn list_available_maps() -> Result<Vec<MapMenuEntry>> {
     let config: GameConfig = GameConfig::load()?;
     let ra2_dir: PathBuf = config.paths.ra2_dir;
     let mut maps: Vec<MapMenuEntry> = Vec::new();
-    for entry in std::fs::read_dir(ra2_dir)? {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        if !retail_enumerated_file(&path) {
-            continue;
-        }
+    for path in retail_directory_files(&ra2_dir)? {
         let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
             continue;
         };
@@ -238,15 +232,7 @@ fn append_loose_yrm_records(
 fn loose_files_with_extension(ra2_dir: &Path, extension: &str) -> Result<Vec<(PathBuf, String)>> {
     let mut files = Vec::new();
 
-    for entry in std::fs::read_dir(ra2_dir)? {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        if !retail_enumerated_file(&path) {
-            continue;
-        }
+    for path in retail_directory_files(ra2_dir)? {
         let Some(file_name) = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -381,8 +367,34 @@ fn display_name_from_basic_or_file(ini: &IniFile, file_name: &str) -> String {
         .unwrap_or_else(|| file_name.to_string())
 }
 
+/// The files retail enumerates in the install directory, in enumeration
+/// order. The browser build lists its in-memory copy of the install.
+fn retail_directory_files(ra2_dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        Ok(crate::util::vfs::list(ra2_dir)?
+            .into_iter()
+            .map(|entry| ra2_dir.join(entry.name))
+            .collect())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut paths = Vec::new();
+        for entry in std::fs::read_dir(ra2_dir)? {
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let path = entry.path();
+            if retail_enumerated_file(&path) {
+                paths.push(path);
+            }
+        }
+        Ok(paths)
+    }
+}
+
 fn read_ini_file(path: &Path) -> Option<IniFile> {
-    std::fs::read(path)
+    crate::util::vfs::read(path)
         .ok()
         .and_then(|bytes| IniFile::from_bytes(&bytes).ok())
 }
