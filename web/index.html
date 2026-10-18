@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VERA20k</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #000; color: #c8c8c8;
+                 font: 14px system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    canvas { display: block; outline: none; max-width: 100vw; max-height: 100vh; }
+    #status { position: fixed; top: 8px; left: 8px; right: 8px; opacity: 0.8; }
+    #setup { max-width: 520px; padding: 24px 16px; line-height: 1.5; }
+    [hidden] { display: none !important; }
+    #setup h1 { font-size: 20px; margin: 0 0 8px; color: #e8e8e8; }
+    #setup p { margin: 0 0 16px; }
+    button, label.button { display: inline-block; padding: 8px 14px; border: 1px solid #555;
+             border-radius: 6px; background: #1b1f27; color: #e8e8e8; font: inherit; cursor: pointer; }
+    button:hover, label.button:hover { background: #262b36; }
+    #forget { position: fixed; bottom: 8px; right: 8px; font-size: 12px; padding: 4px 8px; }
+    progress { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="status">Loading…</div>
+  <div id="setup" hidden>
+    <h1>Choose your Yuri's Revenge folder</h1>
+    <p>VERA20k needs your own copy of Red Alert 2: Yuri's Revenge. Pick the installed game folder
+       (the one containing <code>ra2.mix</code> and <code>ra2md.mix</code>). The files are copied
+       into this browser's private storage once and never leave your computer.</p>
+    <label class="button">Choose folder…
+      <input id="folder" type="file" webkitdirectory hidden>
+    </label>
+    <p id="copy" hidden><progress id="copy-progress" max="1" value="0"></progress>
+       <span id="copy-text"></span></p>
+  </div>
+  <button id="forget" hidden>Forget game files</button>
+  <script type="module">
+    const status = document.getElementById("status");
+    const setup = document.getElementById("setup");
+    const forget = document.getElementById("forget");
+    // Must match the folder name the engine reads in src/web.rs.
+    const STORE = "ra2";
+    const MANIFEST = "manifest.json";
+    const REQUIRED = ["ra2.mix", "ra2md.mix", "multimd.mix", "mapsmd03.mix"];
+    // Original Red Alert 2 archives the Yuri's Revenge loader never opens.
+    const UNUSED = new Set(["movies01.mix", "movies02.mix", "multi.mix",
+                            "maps01.mix", "maps02.mix", "wdt.mix"]);
+    const SKIP_EXT = /\.(exe|dll|ico|bmp|lnk|url|txt|log)$/i;
+
+    async function storeDir(create) {
+      const root = await navigator.storage.getDirectory();
+      return root.getDirectoryHandle(STORE, { create });
+    }
+
+    async function readManifest() {
+      try {
+        const dir = await storeDir(false);
+        const file = await (await dir.getFileHandle(MANIFEST)).getFile();
+        return JSON.parse(await file.text());
+      } catch {
+        return null;
+      }
+    }
+
+    function wanted(file) {
+      const parts = file.webkitRelativePath.split("/");
+      if (parts.length !== 2) return false; // only the folder's own files
+      const name = file.name.toLowerCase();
+      return !UNUSED.has(name) && !SKIP_EXT.test(name);
+    }
+
+    async function copyFolder(files) {
+      const picked = [...files].filter(wanted);
+      const names = new Set(picked.map(f => f.name.toLowerCase()));
+      const missing = REQUIRED.filter(name => !names.has(name));
+      if (missing.length) {
+        throw new Error("That folder is missing " + missing.join(", ") +
+                        ". Pick the installed Yuri's Revenge folder.");
+      }
+      const root = await navigator.storage.getDirectory();
+      await root.removeEntry(STORE, { recursive: true }).catch(() => {});
+      const dir = await storeDir(true);
+      const total = picked.reduce((sum, f) => sum + f.size, 0);
+      const progress = document.getElementById("copy-progress");
+      const text = document.getElementById("copy-text");
+      document.getElementById("copy").hidden = false;
+      let done = 0;
+      for (const file of picked) {
+        text.textContent = `Copying ${file.name}…`;
+        const handle = await dir.getFileHandle(file.name.toLowerCase(), { create: true });
+        const writable = await handle.createWritable();
+        await writable.write(file);
+        await writable.close();
+        done += file.size;
+        progress.value = done / total;
+      }
+      const manifest = picked.map(f => ({ name: f.name.toLowerCase(), size: f.size }));
+      const out = await (await dir.getFileHandle(MANIFEST, { create: true })).createWritable();
+      await out.write(JSON.stringify(manifest));
+      await out.close();
+    }
+
+    async function startEngine() {
+      setup.hidden = true;
+      forget.hidden = false;
+      status.textContent = "Starting VERA20k…";
+      try {
+        const { default: init } = await import("./pkg/vera20k.js");
+        await init();
+      } catch (err) {
+        // winit hands the event loop to the browser by throwing a control-flow
+        // exception; anything else is a real failure.
+        if (!String(err).includes("Using exceptions for control flow")) {
+          status.textContent = "Failed to start: " + err;
+          throw err;
+        }
+      }
+    }
+
+    forget.addEventListener("click", async () => {
+      const root = await navigator.storage.getDirectory();
+      await root.removeEntry(STORE, { recursive: true }).catch(() => {});
+      location.reload();
+    });
+
+    document.getElementById("folder").addEventListener("change", async (event) => {
+      try {
+        status.textContent = "";
+        await navigator.storage.persist?.();
+        await copyFolder(event.target.files);
+        location.reload();
+      } catch (err) {
+        status.textContent = String(err.message || err);
+      }
+    });
+
+    if (!navigator.gpu) {
+      status.textContent = "This browser has no WebGPU support.";
+    } else if (!navigator.storage?.getDirectory) {
+      status.textContent = "This browser has no private file storage (OPFS).";
+    } else if (await readManifest()) {
+      await startEngine();
+    } else {
+      status.textContent = "";
+      setup.hidden = false;
+    }
+  </script>
+</body>
+</html>

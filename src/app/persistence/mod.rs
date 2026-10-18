@@ -17,7 +17,7 @@ pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
 use std::path::{Path, PathBuf};
 #[cfg(any(feature = "dev-ui", test))]
-use std::time::Instant;
+use web_time::Instant;
 #[cfg(any(feature = "dev-overlays", test))]
 use std::time::SystemTime;
 

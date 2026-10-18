@@ -628,7 +628,7 @@ fn production_rally_workload_timing() {
     use crate::render::terrain_draw_gpu_tests::{Gpu, camera};
     use crate::sim::components::DriveCoord;
     use crate::sim::movement::ground_pose;
-    use std::time::{Duration, Instant};
+    use web_time::{Duration, Instant};
     let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
     let size = [800, 600];
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;

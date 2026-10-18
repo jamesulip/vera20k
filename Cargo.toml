@@ -112,6 +112,18 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 # Playback only: the engine decodes its own audio and hands rodio PCM buffers, so
 # rodio's decoders (symphonia), dither and microphone recording stay off.
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
+web-time = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.114"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3.91"
+web-sys = { version = "0.3.91", features = [
+    "Blob", "Document", "Element", "File", "FileSystemDirectoryHandle",
+    "FileSystemFileHandle", "Navigator", "StorageManager", "Window",
+] }
+console_error_panic_hook = "0.1"
+console_log = "1"
 
 [target.'cfg(unix)'.dependencies]
 # Continuing presentation uptime across saved-game process restarts. The
@@ -144,6 +156,8 @@ thiserror = "2"
 # anyhow for application-level error propagation (main.rs, app facade)
 anyhow = "1"
 log = "0.4"
+# std::time::Instant on native; a browser clock on wasm32, where std panics.
+web-time = "1.1"
 # Without the `regex` feature, the optional `/filter` part of RUST_LOG matches as
 # a substring; module and level filters are unchanged. It was the only user of
 # the regex crates. `humantime` stays for `format_timestamp_secs`.

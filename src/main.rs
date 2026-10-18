@@ -5,9 +5,18 @@
 //!
 //! Module declarations live in lib.rs so integration tests can import them.
 
+#[cfg(not(target_arch = "wasm32"))]
 use anyhow::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::event_loop::EventLoop;
 
+/// In the browser the event loop is handed to the page and `main` returns at once.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    vera20k::web::start();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<()> {
     let log_path = match vera20k::util::logging::init_file_logger("ra2") {
         Ok(path) => {

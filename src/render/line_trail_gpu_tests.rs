@@ -249,7 +249,7 @@ fn line_trail_native_fixture_submission_timings() {
         SparkPointCommand, SparkPointPlanes, SparkPointPreparation, TacticalPointViewport,
         TacticalRect, prepare_spark_point, welding_tests as fixture,
     };
-    use std::time::Instant;
+    use web_time::Instant;
     let native: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/projectile_oracle/line_trail.json",
     ))

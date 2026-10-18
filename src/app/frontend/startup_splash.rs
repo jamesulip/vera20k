@@ -3,7 +3,7 @@
 //! This is intentionally separate from `app::loading`: the native GLS splash is
 //! process initialization chrome, not selected-scenario loading presentation.
 
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 

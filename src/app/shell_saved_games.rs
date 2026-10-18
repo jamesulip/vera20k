@@ -287,7 +287,7 @@ impl App {
                 &layout,
                 extent,
                 pointer,
-                std::time::Instant::now(),
+                web_time::Instant::now(),
                 saved_file_input::host_double_click_limits(),
             )
         } else {
@@ -321,7 +321,7 @@ impl App {
             &layout,
             y,
             pointer_moved,
-            std::time::Instant::now(),
+            web_time::Instant::now(),
         ) {
             return;
         }

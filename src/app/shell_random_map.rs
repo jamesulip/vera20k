@@ -1145,7 +1145,7 @@ impl App {
                 .skirmish_shell_state
                 .random_map_setup_modal
                 .as_mut()
-                && setup.statics.hover(&help, std::time::Instant::now())
+                && setup.statics.hover(&help, web_time::Instant::now())
             {
                 state.platform.window.request_redraw();
             }

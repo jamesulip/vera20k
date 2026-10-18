@@ -728,7 +728,7 @@ fn retail_bridge_catalog_after_normal_map_loading() {
         ("VERA20K_C3Y03MD_MAP", "c3y03md.map"),
     ] {
         let map = std::env::var(variable).unwrap_or_else(|_| fallback.into());
-        let began = std::time::Instant::now();
+        let began = web_time::Instant::now();
         let scenario =
             crate::headless_scenario::load(std::path::Path::new(&retail), &map, 0xB21D6E5).unwrap();
         let loaded_in = began.elapsed();

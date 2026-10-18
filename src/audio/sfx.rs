@@ -3933,7 +3933,7 @@ mod tests {
     fn retail_squid_one_shot_device_release_detach_and_hard_stop() {
         let mut service = TestAudioService::default();
         use std::io::Write;
-        use std::time::{Duration, Instant};
+        use web_time::{Duration, Instant};
 
         // Original gattling_loop shared one-shot controls establish Release
         // 406060 finishing the current buffer, while generic405FD0 requests
@@ -4090,7 +4090,7 @@ mod tests {
     #[test]
     #[ignore = "requires active-retail RA2_DIR and an audio output device"]
     fn retail_above_floor_gap_parks_the_record_until_the_next_start_pass() {
-        use std::time::{Duration, Instant};
+        use web_time::{Duration, Instant};
         let mut service = TestAudioService::default();
         let (_root, assets) = crate::rules::retail_ini_fixture::retail_assets()
             .expect("explicit device witness requires active-retail assets");

@@ -2,7 +2,7 @@
 // Implementation in Tasks 35, 36, 38.
 
 use crate::BikPlayerApp;
-use std::time::Instant;
+use web_time::Instant;
 use vera20k::assets::bink_decode::BinkDecoder;
 use vera20k::assets::bink_file::BinkFile;
 

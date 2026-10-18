@@ -1052,7 +1052,7 @@ fn retail_bridge_body_matches_native_color_and_depth_attachments() {
 #[test]
 #[ignore = "bounded bridge GPU/CPU timing; requires retail assets and an uncontended GPU"]
 fn retail_bridge_shadow_workload_timing() {
-    use std::time::{Duration, Instant};
+    use web_time::{Duration, Instant};
     let packet = native_bridge_packet();
     let fixture = RetailBridgeFixture::load(&packet);
     let gpu = Gpu::with_features(

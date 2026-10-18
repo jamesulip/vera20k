@@ -117,7 +117,7 @@ impl GpuFrameTimer {
         gpu: &Gpu,
         encode: impl FnOnce(&mut wgpu::CommandEncoder) -> T,
     ) -> (T, f64, f64) {
-        let begin = std::time::Instant::now();
+        let begin = web_time::Instant::now();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         self.mark(&mut encoder, 0);
         let result = encode(&mut encoder);

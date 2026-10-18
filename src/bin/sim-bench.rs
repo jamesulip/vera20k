@@ -56,7 +56,7 @@ mod sim_bench_match;
 
 use std::num::NonZeroU64;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use vera20k_core::headless_scenario::{self, SIM_TICK_MS};
 use vera20k_core::sim::command::{Command, CommandEnvelope};

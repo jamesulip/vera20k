@@ -102,7 +102,7 @@ fn saved_view_replaces_reused_ids_and_preserves_order_and_raw_bookmarks() {
         outgoing.selection_order_pending = true;
         outgoing.control_groups[4] = vec![1, 2, 3];
         outgoing.follow_target = Some(1);
-        outgoing.last_control_group_press = Some((9, std::time::Instant::now()));
+        outgoing.last_control_group_press = Some((9, web_time::Instant::now()));
         outgoing.view_bookmarks.seed_all(9, 9);
         // This owner restores only established saved facts. A future input
         // lifecycle change must not be smuggled in as blanket initialization.

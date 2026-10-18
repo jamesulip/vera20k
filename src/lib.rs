@@ -32,6 +32,10 @@ pub mod audio;
 // The app orchestrator. Public for testing but not intended for direct use.
 pub mod app;
 
+// Browser entry point: canvas, async WebGPU setup and the frame loop.
+#[cfg(target_arch = "wasm32")]
+pub mod web;
+
 // Source-level dependency guards for the domain-boundaries ledger.
 #[cfg(test)]
 mod architecture_guards;

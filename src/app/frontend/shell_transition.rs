@@ -13,7 +13,7 @@
 //! wave is live. The slide-in start cue is `GUIMoveInSound` (stock `MenuSlideIn`);
 //! the stock-empty end cue (`ShellButtonSlideSound`) stays silent.
 
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 

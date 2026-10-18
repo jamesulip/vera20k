@@ -39,6 +39,7 @@
 //! - Part of assets/ — no dependencies on game modules.
 //! - Uses mix_crypto for decryption and mix_hash for filename lookup.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -94,6 +95,7 @@ pub struct MixArchive {
 #[derive(Clone)]
 enum MixBytes {
     Owned(Arc<[u8]>),
+    #[cfg(not(target_arch = "wasm32"))]
     Mapped(Arc<memmap2::Mmap>),
 }
 
@@ -115,6 +117,7 @@ impl MixData {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn from_mapped(map: memmap2::Mmap) -> Self {
         let bytes = Arc::new(map);
         let len = bytes.len();
@@ -128,6 +131,7 @@ impl MixData {
     fn as_slice(&self) -> &[u8] {
         let bytes = match &self.bytes {
             MixBytes::Owned(data) => &data[..],
+            #[cfg(not(target_arch = "wasm32"))]
             MixBytes::Mapped(map) => &map[..],
         };
         &bytes[self.start..self.start + self.len]
@@ -240,6 +244,21 @@ impl MixArchive {
     }
 
     /// Load a MIX archive from a file path.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load(path: &Path) -> Result<Self, AssetError> {
+        let bytes = crate::assets::web_files::get(path).ok_or_else(|| AssetError::AssetNotFound {
+            name: path.display().to_string(),
+        })?;
+        let len = bytes.len();
+        Self::from_data(MixData {
+            bytes: MixBytes::Owned(bytes),
+            start: 0,
+            len,
+        })
+    }
+
+    /// Load a MIX archive from a file path.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load(path: &Path) -> Result<Self, AssetError> {
         let file = File::open(path)?;
         let data = unsafe { memmap2::MmapOptions::new().map(&file)? };

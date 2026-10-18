@@ -966,7 +966,7 @@ impl App {
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
-            && modal.statics.hover(&text, std::time::Instant::now())
+            && modal.statics.hover(&text, web_time::Instant::now())
         {
             state.platform.window.request_redraw();
         }

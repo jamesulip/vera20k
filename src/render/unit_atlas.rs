@@ -17,7 +17,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::time::Instant;
+use web_time::Instant;
 
 #[path = "unit_shadow_cache.rs"]
 mod shadow_cache;

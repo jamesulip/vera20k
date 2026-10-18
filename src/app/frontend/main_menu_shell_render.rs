@@ -1,7 +1,7 @@
 //! Initial main-menu shell render glue for dialog 0xE2.
 
 use std::sync::Arc;
-use std::time::Instant;
+use web_time::Instant;
 
 use anyhow::Result;
 

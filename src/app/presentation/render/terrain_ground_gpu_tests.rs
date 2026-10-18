@@ -669,7 +669,7 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                let start = std::time::Instant::now();
+                let start = web_time::Instant::now();
                 let stats = draw_native_object_pass(
                     &mut encoder,
                     &cv,

@@ -6,7 +6,7 @@
 use super::input::dispatch;
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
-    KeyEventExtModifierSupplement, MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
+    MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
     ShellKey, WindowEvent, WindowId,
 };
 
@@ -766,7 +766,7 @@ impl ApplicationHandler for App {
                     }
 
                     if in_game {
-                        let unmodified = event.key_without_modifiers();
+                        let unmodified = crate::app::input::keyboard::key_without_modifiers(&event);
                         crate::app::input::keyboard::in_game_key_edge(
                             state,
                             crate::app::input::keyboard::InGameKeyEdge {

@@ -39,6 +39,8 @@ pub mod mix_crypto;
 pub mod mix_hash;
 pub mod pal_file;
 pub mod pcx_file;
+#[cfg(target_arch = "wasm32")]
+pub mod web_files;
 pub mod shp_decode;
 pub mod shp_file;
 pub mod tmp_decode;

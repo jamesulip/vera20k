@@ -479,7 +479,7 @@ fn production_a_blitter_workload_timing() {
             let mut gpu_ms = Vec::new();
             let mut completed_ms = Vec::new();
             for frame in 0..22 {
-                let start = std::time::Instant::now();
+                let start = web_time::Instant::now();
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 {
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -514,7 +514,7 @@ fn production_a_blitter_workload_timing() {
                 encoder.copy_buffer_to_buffer(&resolved, 0, &read, 0, 16);
                 let command = encoder.finish();
                 let encode_ms = start.elapsed().as_secs_f64() * 1000.0;
-                let submitted = std::time::Instant::now();
+                let submitted = web_time::Instant::now();
                 let submission = gpu.queue.submit([command]);
                 let (tx, rx) = std::sync::mpsc::channel();
                 read.slice(..)

@@ -156,7 +156,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
         vec![33, 0, 33, 0, 0, 33, 0, 33]
     );
     assert_eq!(sample_indices(&gpu, &atlas, &turret_key), vec![57; 320]);
-    let start = std::time::Instant::now();
+    let start = web_time::Instant::now();
     for _ in 0..20_000 {
         assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, []));
     }

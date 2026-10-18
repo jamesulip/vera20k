@@ -336,7 +336,7 @@ fn production_bullet_decoded_zero_runs_preserve_color_and_depth() {
 #[test]
 #[ignore = "bounded CPU/completed-submission timing; close other renderers before uncontended measurements"]
 fn production_bullet_small_piece_workload_timing() {
-    use std::time::{Duration, Instant};
+    use web_time::{Duration, Instant};
     let gpu = Gpu::new();
     let size = [1024, 768];
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
